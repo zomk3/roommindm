@@ -124,6 +124,10 @@ export interface RoomConfig {
   devices?: DeviceConfig[];
   temperature_sensor: string;
   humidity_sensor: string;
+  dehumidifier_entity?: string;
+  dehumidifier_enabled?: boolean;
+  dehumidifier_lower_bound?: number;
+  dehumidifier_upper_bound?: number;
   occupancy_sensors?: string[];
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;

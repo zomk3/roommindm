@@ -601,5 +601,11 @@
   "heat_source.ac_min_outdoor_hint": "Désactiver complètement la climatisation en dessous de cette température pour protéger le matériel de la pompe à chaleur.",
   "heat_source.ac_min_outdoor_suffix": "°C",
   "heat_source.summary_disabled": "La sélection intelligente de la source est désactivée",
-  "devices.valve_closing_entity_hint": "Maintient la vanne à l'ouverture réglée, quoi que veuille la régulation de la tête. Rempli automatiquement si l'appareil la nomme comme le degré d'ouverture (valve_closing_degree)."
+  "devices.valve_closing_entity_hint": "Maintient la vanne à l'ouverture réglée, quoi que veuille la régulation de la tête. Rempli automatiquement si l'appareil la nomme comme le degré d'ouverture (valve_closing_degree).",
+  "dehumidifier.title": "Déshumidificateur",
+  "dehumidifier.entity": "Déshumidificateur ou prise commandée",
+  "dehumidifier.enabled": "Déshumidification automatique",
+  "dehumidifier.lower": "Limite basse d’humidité (%)",
+  "dehumidifier.upper": "Limite haute d’humidité (%)",
+  "dehumidifier.hint": "Démarre à la limite haute ou en cas de risque de moisissure détecté, s’arrête à la limite basse. Remplace le chauffage préventif. Nécessite un capteur d’humidité."
 }

@@ -74,6 +74,7 @@ from .managers.compressor_group_manager import (
     resolve_master_action,
 )
 from .managers.cover_orchestrator import CoverOrchestrator, CoverResult
+from .managers.dehumidifier_manager import DehumidifierManager
 from .managers.ekf_training_manager import EkfTrainingManager
 from .managers.head_offset_tracker import HeadOffsetTracker
 from .managers.heat_source_orchestrator import HeatSourcePlan, evaluate_heat_sources
@@ -196,6 +197,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._valve_manager = ValveManager(hass)
         # Mold risk tracking
         self._mold_manager = MoldManager(hass)
+        self._dehumidifier_manager = DehumidifierManager(hass)
         # Residual heat tracking (heating → idle transition)
         self._residual_tracker = ResidualHeatTracker()
         # AC rebound charge (air pulled below the building mass while cooling)
@@ -668,6 +670,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
 
+        await self._dehumidifier_manager.evaluate(room, current_temp, current_humidity, self.outdoor_temp_effective)
+
         # --- Outdoor room: skip all control logic ---
         if room.get("is_outdoor", False):
             await self._async_release_valves(area_id, room.get("devices", []))
@@ -728,7 +732,24 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             mold_surface_temp,
             mold_prevention_active_room,
             mold_prevention_temp_delta,
-        ) = await self._evaluate_mold_risk(area_id, current_temp, current_humidity, settings)
+        ) = await self._evaluate_mold_risk(
+            area_id,
+            current_temp,
+            current_humidity,
+            (
+                {
+                    **settings,
+                    "mold_detection_enabled": True,
+                    "mold_prevention_enabled": False,
+                    "mold_notifications_enabled": (
+                        settings.get("mold_detection_enabled", False)
+                        and settings.get("mold_notifications_enabled", True)
+                    ),
+                }
+                if room.get("dehumidifier_enabled")
+                else settings
+            ),
+        )
 
         # Load schedule blocks once — used for both target temp resolution and MPC lookahead.
         from .utils.schedule_utils import (
@@ -2321,6 +2342,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Drop a room's entities and in-memory run state."""
         from homeassistant.helpers import entity_registry as er
 
+        await self._dehumidifier_manager.remove_room(area_id)
         registry = er.async_get(self.hass)
 
         # Remove entities owned by exactly this area. Exact-match the known

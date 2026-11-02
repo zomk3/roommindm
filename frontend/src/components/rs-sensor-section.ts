@@ -17,6 +17,10 @@ export class RsSensorSection extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
   @property({ type: String }) public temperatureSensor = "";
   @property({ type: String }) public humiditySensor = "";
+  @property({ type: String }) public dehumidifierEntity = "";
+  @property({ type: Boolean }) public dehumidifierEnabled = false;
+  @property({ type: Number }) public dehumidifierLower = 50;
+  @property({ type: Number }) public dehumidifierUpper = 60;
   @property({ attribute: false }) public occupancySensors: Set<string> = new Set();
   @property({ type: Boolean }) public occupancyEcoEnabled = false;
   @property({ type: Number }) public occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
@@ -397,7 +401,13 @@ export class RsSensorSection extends LitElement {
     const hasOccupancySensors = this.occupancySensors.size > 0;
     const hasWindowSensors = this.windowSensors.size > 0;
 
-    if (!hasTempSensor && !hasHumiditySensor && !hasOccupancySensors && !hasWindowSensors) {
+    if (
+      !hasTempSensor &&
+      !hasHumiditySensor &&
+      !hasOccupancySensors &&
+      !hasWindowSensors &&
+      !this.dehumidifierEntity
+    ) {
       return nothing;
     }
 
@@ -416,6 +426,18 @@ export class RsSensorSection extends LitElement {
           ? html`
               <div class="section-subtitle">${localize("devices.humidity_sensors", lang)}</div>
               ${this._renderSensorViewRow(this.humiditySensor, "humidity")}
+            `
+          : nothing
+      }
+      ${
+        this.dehumidifierEntity
+          ? html`
+              <div class="section-subtitle">${localize("dehumidifier.title", lang)}</div>
+              <div>
+                ${this.hass.states[this.dehumidifierEntity]?.attributes.friendly_name ?? this.dehumidifierEntity}
+                · ${this.dehumidifierLower}–${this.dehumidifierUpper}%
+                ${this.dehumidifierEnabled ? html` · ${localize("dehumidifier.enabled", lang)}` : nothing}
+              </div>
             `
           : nothing
       }
@@ -611,6 +633,39 @@ export class RsSensorSection extends LitElement {
         externalSensors: externalHumiditySensor ? [externalHumiditySensor] : [],
         selectedCount: this.humiditySensor ? 1 : 0,
       })}
+      <div class="sensor-block">
+        <span class="block-title">${localize("dehumidifier.title", lang)}</span>
+        <label
+          ><input
+            type="checkbox"
+            .checked=${this.dehumidifierEnabled}
+            ?disabled=${!this.dehumidifierEntity || !this.humiditySensor}
+            @change=${(e: Event) => this._dehumidifierChanged("dehumidifier_enabled", (e.target as HTMLInputElement).checked)}
+          />
+          ${localize("dehumidifier.enabled", lang)}</label
+        >
+        <label
+          >${localize("dehumidifier.lower", lang)}
+          <input
+            type="number"
+            min="1"
+            max=${this.dehumidifierUpper - 1}
+            .value=${String(this.dehumidifierLower)}
+            @change=${(e: Event) => this._dehumidifierBoundChanged(e, true)}
+          />
+        </label>
+        <label
+          >${localize("dehumidifier.upper", lang)}
+          <input
+            type="number"
+            min=${this.dehumidifierLower + 1}
+            max="100"
+            .value=${String(this.dehumidifierUpper)}
+            @change=${(e: Event) => this._dehumidifierBoundChanged(e, false)}
+          />
+        </label>
+        <span>${localize("dehumidifier.hint", lang)}</span>
+      </div>
       ${this._renderBlock({
         kind: "occupancy",
         icon: "mdi:account-eye",
@@ -698,6 +753,25 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
     `;
+  }
+
+  private _dehumidifierChanged(key: string, value: string | number | boolean) {
+    this.dispatchEvent(
+      new CustomEvent("sensor-changed", {
+        detail: { key, value },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _dehumidifierBoundChanged(e: Event, lower: boolean) {
+    const input = e.target as HTMLInputElement;
+    if (!input.value || !input.reportValidity()) return;
+    this._dehumidifierChanged(
+      lower ? "dehumidifier_lower_bound" : "dehumidifier_upper_bound",
+      Number(input.value),
+    );
   }
 
   private _renderGlobalAdd(lang: string) {

@@ -601,5 +601,11 @@
   "heat_source.ac_min_outdoor_hint": "AC-Heizen unter dieser Temperatur komplett deaktivieren, um die Wärmepumpen-Hardware zu schützen.",
   "heat_source.ac_min_outdoor_suffix": "°C",
   "heat_source.summary_disabled": "Intelligente Quellenwahl ist aus",
-  "devices.valve_closing_entity_hint": "Hält das Ventil auf der gesetzten Öffnung, egal was die Regelung des Thermostats will. Wird automatisch eingetragen, wenn das Gerät sie wie den Öffnungsgrad benennt (valve_closing_degree)."
+  "devices.valve_closing_entity_hint": "Hält das Ventil auf der gesetzten Öffnung, egal was die Regelung des Thermostats will. Wird automatisch eingetragen, wenn das Gerät sie wie den Öffnungsgrad benennt (valve_closing_degree).",
+  "dehumidifier.title": "Luftentfeuchter",
+  "dehumidifier.entity": "Luftentfeuchter oder Steckdose",
+  "dehumidifier.enabled": "Automatische Entfeuchtung",
+  "dehumidifier.lower": "Untere Feuchtigkeitsgrenze (%)",
+  "dehumidifier.upper": "Obere Feuchtigkeitsgrenze (%)",
+  "dehumidifier.hint": "Startet bei der oberen Grenze oder erkanntem Schimmelrisiko und stoppt bei der unteren Grenze. Ersetzt die Temperaturerhöhung zur Schimmelprävention. Benötigt einen Feuchtigkeitssensor."
 }

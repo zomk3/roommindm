@@ -601,5 +601,11 @@
   "heat_source.ac_min_outdoor_hint": "Disable AC heating entirely below this temperature to protect the heat pump hardware.",
   "heat_source.ac_min_outdoor_suffix": "°C",
   "heat_source.summary_disabled": "Smart source selection is off",
-  "devices.valve_closing_entity_hint": "Keeps the valve at the set opening whatever the thermostat's own control wants. Filled in automatically when the device names it like the opening degree (valve_closing_degree)."
+  "devices.valve_closing_entity_hint": "Keeps the valve at the set opening whatever the thermostat's own control wants. Filled in automatically when the device names it like the opening degree (valve_closing_degree).",
+  "dehumidifier.title": "Dehumidifier",
+  "dehumidifier.entity": "Dehumidifier or power switch",
+  "dehumidifier.enabled": "Automatic dehumidification",
+  "dehumidifier.lower": "Lower humidity bound (%)",
+  "dehumidifier.upper": "Upper humidity bound (%)",
+  "dehumidifier.hint": "Starts at the upper bound or detected mold risk, stops at the lower bound. Replaces mold-prevention heating. Requires a humidity sensor."
 }

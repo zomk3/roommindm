@@ -115,6 +115,10 @@ _ROOM_SAVE_FIELDS = (
     "devices",
     "temperature_sensor",
     "humidity_sensor",
+    "dehumidifier_entity",
+    "dehumidifier_enabled",
+    "dehumidifier_lower_bound",
+    "dehumidifier_upper_bound",
     "occupancy_sensors",
     "occupancy_eco_enabled",
     "occupancy_eco_delay",
@@ -226,7 +230,7 @@ def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
         eid = device.get("entity_id", "")
         if eid.split(".", 1)[-1].startswith(own_prefix):
             return f"Cannot assign RoomMind's own entity '{eid}' to a room"
-    for field in ("temperature_sensor", "humidity_sensor"):
+    for field in ("temperature_sensor", "humidity_sensor", "dehumidifier_entity"):
         eid = config.get(field, "")
         if eid and eid.split(".", 1)[-1].startswith(own_prefix):
             return f"Cannot assign RoomMind's own entity '{eid}' to a room"
@@ -418,6 +422,10 @@ async def websocket_list_rooms(
         ],
         vol.Optional("temperature_sensor"): str,
         vol.Optional("humidity_sensor"): str,
+        vol.Optional("dehumidifier_entity"): vol.Any("", vol.Match(r"^(switch|humidifier)\.[a-z0-9_]+$")),
+        vol.Optional("dehumidifier_enabled"): bool,
+        vol.Optional("dehumidifier_lower_bound"): vol.All(vol.Coerce(float), vol.Range(min=1, max=99)),
+        vol.Optional("dehumidifier_upper_bound"): vol.All(vol.Coerce(float), vol.Range(min=2, max=100)),
         vol.Optional("occupancy_sensors"): [str],
         vol.Optional("occupancy_eco_enabled"): bool,
         vol.Optional("occupancy_eco_delay"): vol.All(
@@ -484,6 +492,24 @@ async def websocket_save_room(
     for key in _ROOM_SAVE_FIELDS:
         if key in msg:
             config[key] = msg[key]
+
+    merged = {**(store.get_room(area_id) or {}), **config}
+    if merged.get("dehumidifier_lower_bound", 50) >= merged.get("dehumidifier_upper_bound", 60):
+        connection.send_error(msg["id"], "invalid_humidity_bounds", "Lower humidity bound must be below upper bound")
+        return
+    if merged.get("dehumidifier_enabled") and (
+        not merged.get("dehumidifier_entity") or not merged.get("humidity_sensor")
+    ):
+        connection.send_error(msg["id"], "invalid_dehumidifier", "Select a dehumidifier and humidity sensor first")
+        return
+
+    entity = merged.get("dehumidifier_entity")
+    if entity and any(
+        other_id != area_id and other.get("dehumidifier_entity") == entity
+        for other_id, other in store.get_rooms().items()
+    ):
+        connection.send_error(msg["id"], "duplicate_entity", "This dehumidifier is already assigned to another room")
+        return
 
     # Reject RoomMind's own entities to prevent self-assignment (#86)
     own_prefix = f"{DOMAIN}_"

@@ -28,6 +28,7 @@ export class RsDeviceSection extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
   @property({ attribute: false }) public devices: DeviceConfig[] = [];
   @property({ type: String }) public selectedTempSensor = "";
+  @property({ type: String }) public dehumidifierEntity = "";
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: Boolean }) public coilDryEnabledGlobal = false;
@@ -372,6 +373,18 @@ export class RsDeviceSection extends LitElement {
           : nothing
       }
       ${
+        this.dehumidifierEntity
+          ? html`
+              <div class="device-group">
+                <div class="section-subtitle">
+                  ${localize("dehumidifier.title", this.hass.language)}
+                </div>
+                ${this._renderViewRow(this.dehumidifierEntity, "dehumidifier")}
+              </div>
+            `
+          : nothing
+      }
+      ${
         this._heatingSystemType
           ? html`
               <div class="device-group">
@@ -396,14 +409,32 @@ export class RsDeviceSection extends LitElement {
     `;
   }
 
-  private _renderViewRow(entityId: string, type: "climate" | "temp" | "humidity") {
+  private _dehumidifierFilter = (entity: { entity_id: string }): boolean =>
+    !entity.entity_id.split(".")[1]?.startsWith("roommind_");
+
+  private _onDehumidifierPicked(e: CustomEvent<{ value?: string }>) {
+    e.stopPropagation();
+    const value = e.detail.value ?? "";
+    if (value === this.dehumidifierEntity) return;
+    this.dispatchEvent(
+      new CustomEvent("dehumidifier-changed", {
+        detail: { key: "dehumidifier_entity", value },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _renderViewRow(entityId: string, type: "climate" | "temp" | "humidity" | "dehumidifier") {
     const entityState = this.hass.states[entityId];
     const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
     const state = entityState?.state;
     const attrs = entityState?.attributes ?? {};
 
     let displayValue = "";
-    if (type === "climate") {
+    if (type === "dehumidifier") {
+      displayValue = state ?? "";
+    } else if (type === "climate") {
       const ct = attrs.current_temperature as number | undefined;
       if (ct != null) displayValue = `${ct.toFixed(1)}${tempUnit(this.hass)}`;
     } else if (type === "temp") {
@@ -537,6 +568,19 @@ export class RsDeviceSection extends LitElement {
           }
         </div>
       </rs-master-detail>
+      <div class="block-divider"></div>
+      <div class="block">
+        <div class="section-subtitle">${localize("dehumidifier.title", this.hass.language)}</div>
+        <ha-entity-picker
+          .hass=${this.hass}
+          .includeDomains=${["switch", "humidifier"]}
+          .entityFilter=${this._dehumidifierFilter}
+          .value=${this.dehumidifierEntity}
+          .allowCustomEntity=${false}
+          label=${localize("dehumidifier.entity", this.hass.language)}
+          @value-changed=${this._onDehumidifierPicked}
+        ></ha-entity-picker>
+      </div>
 
       ${
         this._selectedThermostats.size > 0
