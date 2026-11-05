@@ -338,3 +338,48 @@ async def test_runtime_counts_only_while_on_and_caps_gaps():
             with patch(f"{MOD}.time.monotonic", return_value=t):
                 await manager.evaluate(_room(), 22, 55, 15, IMMEDIATE)
         assert manager.stats("bath").runtime_s == 60 + 300  # one minute, then a capped gap
+
+
+# --- after a restart ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_no_switch_off_while_the_humidity_sensor_starts_up():
+    manager, hass = _manager({"switch.dryer": "on"})
+    for t in (0, 120, 300):  # the sensor reports unknown for a while after a restart
+        with patch(f"{MOD}.time.monotonic", return_value=t):
+            await manager.evaluate(_room(), 22, None, 15, IMMEDIATE)
+    assert _calls(hass) == []
+    with patch(f"{MOD}.time.monotonic", return_value=301):  # never reported: safety off
+        await manager.evaluate(_room(), 22, None, 15, IMMEDIATE)
+    assert _calls(hass) == [("switch", "turn_off", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_start_phase_ends_with_the_first_reading():
+    manager, hass = _manager({"switch.dryer": "on"})
+    with patch(f"{MOD}.time.monotonic", return_value=0):
+        await manager.evaluate(_room(), 22, None, 15, IMMEDIATE)
+    with patch(f"{MOD}.time.monotonic", return_value=10):
+        await manager.evaluate(_room(), 22, 55, 15, IMMEDIATE)
+    with patch(f"{MOD}.time.monotonic", return_value=400):  # a later loss is a real loss
+        await manager.evaluate(_room(), 22, None, 15, IMMEDIATE)
+    assert _calls(hass) == [("switch", "turn_off", {"entity_id": "switch.dryer"})]
+
+
+# --- device target, once per run ----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_device_target_is_lowered_once_per_run_even_if_the_device_puts_it_back():
+    eid = "humidifier.dryer"
+    states = {eid: ("on", {"humidity": 50, "min_humidity": 25})}
+    manager, hass = _manager(states)
+    for _ in range(4):  # the device keeps reporting 50 % (e.g. in auto mode)
+        await manager.evaluate(_room(eid), 22, 55, 15, IMMEDIATE)
+    assert _calls(hass) == [("humidifier", "set_humidity", {"entity_id": eid, "humidity": 25})]
+    states[eid] = ("off", {"humidity": 50, "min_humidity": 25})
+    await manager.evaluate(_room(eid), 22, 55, 15, IMMEDIATE)
+    states[eid] = ("on", {"humidity": 50, "min_humidity": 25})
+    await manager.evaluate(_room(eid), 22, 55, 15, IMMEDIATE)
+    assert _calls(hass).count(("humidifier", "set_humidity", {"entity_id": eid, "humidity": 25})) == 2
