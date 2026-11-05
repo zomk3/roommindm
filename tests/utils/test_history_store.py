@@ -590,3 +590,37 @@ def test_downsample_takes_first_device_setpoint(history_dir):
     result = store._downsample(rows, bucket_seconds=300)
     assert len(result) == 1
     assert result[0]["device_setpoint"] == "24.0"
+
+
+def test_dehumidifier_and_ventilation_columns_round_trip(history_dir):
+    store = HistoryStore(history_dir)
+    store.record("bath", {"room_temp": 21.0, "dehumidifier_on": True, "ventilation": False}, timestamp=1000.0)
+    row = store.read_detail("bath")[0]
+    assert row["dehumidifier_on"] == "True"
+    assert row["ventilation"] == "False"
+
+
+def test_downsample_keeps_dehumidifier_on_if_it_ran_at_any_time_in_the_bucket(history_dir):
+    store = HistoryStore(history_dir)
+    base = {"room_temp": "20.0", "mode": "idle"}
+    rows = [
+        {**base, "timestamp": "1000", "dehumidifier_on": "False", "ventilation": "False"},
+        {**base, "timestamp": "1060", "dehumidifier_on": "True", "ventilation": "False"},
+        {**base, "timestamp": "1500", "dehumidifier_on": "False", "ventilation": "True"},
+        {**base, "timestamp": "1900"},  # recorded before these columns existed
+    ]
+    result = store._downsample(rows, bucket_seconds=300)
+    assert [r["dehumidifier_on"] for r in result] == [True, False, ""]
+    assert [r["ventilation"] for r in result] == [False, True, ""]
+
+
+def test_old_detail_file_gets_the_new_columns(history_dir):
+    store = HistoryStore(history_dir)
+    os.makedirs(history_dir, exist_ok=True)
+    path = os.path.join(history_dir, "bath_detail.csv")
+    with open(path, "w", newline="") as f:
+        f.write("timestamp,room_temp,mode\n1000,20.5,idle\n")
+    store.record("bath", {"room_temp": 21.0, "dehumidifier_on": True}, timestamp=2000.0)
+    rows = store.read_detail("bath")
+    assert rows[0]["room_temp"] == "20.5" and rows[0]["dehumidifier_on"] == ""
+    assert rows[1]["dehumidifier_on"] == "True"

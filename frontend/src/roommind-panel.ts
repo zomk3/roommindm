@@ -526,6 +526,14 @@ export class RoomMindPanel extends LitElement {
     const configuredCount = areaInfos.filter((i) => i.config).length;
     const heatingCount = areaInfos.filter((i) => i.config?.live?.mode === "heating").length;
     const coolingCount = areaInfos.filter((i) => i.config?.live?.mode === "cooling").length;
+    // Dehumidifying and airing hints come from room dehumidifiers: only shown once a room has one
+    const hasDehumidifier = areaInfos.some(
+      (i) => !!i.config?.dehumidifier_entity && !!i.config?.dehumidifier_enabled,
+    );
+    const dehumidifyingCount = areaInfos.filter((i) => i.config?.live?.dehumidifier_active).length;
+    const ventilationCount = areaInfos.filter(
+      (i) => i.config?.live?.ventilation_recommended,
+    ).length;
     const moldCount = areaInfos.filter(
       (i) =>
         i.config?.live?.mold_risk_level === "warning" ||
@@ -559,6 +567,32 @@ export class RoomMindPanel extends LitElement {
                           >
                           <span class="stat-label">${localize("panel.stat.cooling", l)}</span>
                         </div>
+                        ${
+                          hasDehumidifier
+                            ? html`
+                                <div class="stat">
+                                  <span
+                                    class="stat-value"
+                                    style="color: var(--rs-dehumidify-color, #7e57c2)"
+                                    >${dehumidifyingCount}</span
+                                  >
+                                  <span class="stat-label"
+                                    >${localize("panel.stat.dehumidifying", l)}</span
+                                  >
+                                </div>
+                                <div class="stat">
+                                  <span
+                                    class="stat-value"
+                                    style="color: var(--rs-ventilation-color, #26a69a)"
+                                    >${ventilationCount}</span
+                                  >
+                                  <span class="stat-label"
+                                    >${localize("panel.stat.ventilation", l)}</span
+                                  >
+                                </div>
+                              `
+                            : nothing
+                        }
                       `
                     : nothing
                 }

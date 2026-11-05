@@ -389,6 +389,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             "cover_reason": rs.get("cover_reason", ""),
                             "device_setpoint": rs.get("device_setpoint"),
                             "occupancy": rs.get("q_occupancy", 0.0) > 0,
+                            "dehumidifier_on": rs.get("dehumidifier_active", False),
+                            "ventilation": rs.get("ventilation_recommended", False),
                         },
                     )
                 except Exception:  # noqa: BLE001

@@ -26,7 +26,8 @@
 - **Vacation Mode** - Global setback temperature with end date for all rooms.
 - **Window/Door Pause** - Pauses climate control when windows or doors are open, with configurable open/close delays.
   After a restart, RoomMind waits until the window sensors report a state (at most 5 minutes; a sensor that is still unavailable then counts as closed). A sensor that no longer exists at all (deleted or renamed) counts as closed right away once Home Assistant has finished starting, with a warning in the log. A sensor that drops out briefly keeps its last state.
-- **Mold Risk Detection & Prevention** - Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth.
+- **Mold Risk Detection & Prevention** - Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth, switchable per room.
+- **Dehumidifier Control** - Per-room dehumidifier (`humidifier` entity or power switch) with humidity bounds, mold-risk start, switching delay, compressor protection, quiet hours, window pause, tank-full detection and airing hints. Runs alongside or instead of mold-prevention heating, see [Mold protection & dehumidifiers](#mold-protection--dehumidifiers).
 - **Automatic Blind/Cover Shading** - Smart cover deployment based on predicted solar overheating. Includes night close, manual override detection, and cover schedules.
 - **Valve Protection** - Periodic cycling of idle TRV valves to prevent seizing and calcification.
 - **Heat Source Orchestration** - Rooms with both TRVs and ACs automatically route heating demand to the most efficient device based on temperature gap and outdoor conditions.
@@ -75,7 +76,7 @@ RoomMind starts controlling immediately. If MPC is enabled (default), the therma
 
 ![Analytics](docs/images/page-analytics.png)
 
-Select a room and time range (24h / 7d / 30d / 90d / custom) to view temperature history, heating/cooling power, solar irradiance, and model predictions. Export as CSV or diagnostics report.
+Select a room and time range (24h / 7d / 30d / 90d / custom) to view temperature history, heating/cooling power, solar irradiance, and model predictions. Bands mark heating, cooling, open windows, and, for rooms with a dehumidifier, when it ran and when airing was recommended. Export as CSV or diagnostics report.
 
 ## How It Works
 
@@ -109,6 +110,59 @@ Until calibrated (~60 idle + ~20 active samples), RoomMind falls back to simple 
 `Settings -> Control -> Control Mode` decides whether MPC is used at all. **Intelligent (MPC)** is the default. **Simple** keeps every room on the on/off control with hysteresis; the thermal model still learns in the background and feeds the analytics prediction, but it never makes heating or cooling decisions. Automatic blinds then shade from a simpler solar estimate instead of the MPC forecast.
 
 For a more detailed explanation of the `Priority` slider, device types, setpoint modes, idle behavior, and smart source selection, see the [Control and Device Guide](docs/control-and-devices.md).
+
+### Mold protection & dehumidifiers
+
+Each room protects itself against mold in two independent ways, set in the room's
+**Schedule, Temperatures & Humidity** section: enable one, the other or both.
+
+| Per room | What it does | Needs |
+|---|---|---|
+| **Mold-prevention heating** (default on) | Raises the heating target on mold risk by the intensity from Settings → Mold protection | Mold prevention enabled in the settings |
+| **Automatic dehumidification** (default off) | Runs the room's dehumidifier between a lower and upper humidity bound (default 50 / 60 %) | A dehumidifier under **Devices**, a humidity sensor under **Sensors** |
+
+The dehumidifier is a `humidifier` entity or the `switch` of its smart plug, chosen in the
+room's **Devices** section. RoomMind switches it on at the upper bound or when the surface-humidity
+estimate shows mold risk, and off at the lower bound; inside the band it leaves the device as it is,
+so it runs for long stretches instead of cycling. When RoomMind switches a `humidifier` entity on it
+lowers the device's own target to its minimum, so the built-in humidistat (often a poor sensor next to
+the unit) does not stop it before the room reaches the lower bound. This is tried once per run: some
+devices put their own target back (e.g. in an "auto" mode) and are not sent the same command every
+cycle.
+
+Global dehumidifier settings (Settings → Mold protection → Dehumidifiers):
+
+| Setting | Default | Effect |
+|---|---|---|
+| Switching delay | 10 min | A bound or mold risk must hold this long before switching on or off, so a shower peak does not start a full run. 0 = immediately |
+| Minimum run / minimum pause | 10 / 5 min | Compressor protection, measured from the device's last real state change, whoever caused it |
+| Quiet hours | off, 22:00–07:00 | No dehumidifying in this time, except on critical mold risk |
+| Airing hint | on | In rooms with a window sensor: when outdoor air holds at least 2 g/m³ less water than the room, show "air the room" and notify (at most every 2 hours) |
+| Prefer airing | off | While airing is recommended, wait 30 minutes before starting the dehumidifier (not on critical mold risk) |
+
+More behaviour per room:
+
+- **Window open** - the dehumidifier switches off, after the room's window open delay but without the
+  switching delay (the minimum run still applies). The same holds when quiet hours begin.
+- **Water tank full** - with a tank-full binary sensor (set under **Devices**, suggested from the same
+  device), RoomMind sends no commands, notifies once and shows "water tank full".
+- **Fallback to heating** - while the dehumidifier cannot work (tank full or the device unavailable),
+  mold-prevention heating steps in, even if the room has it switched off.
+- **Status** - the room view and its card show "dehumidifier on · down to 50 % · today 2 h 5 min",
+  why it is paused (window, quiet hours, tank), and the airing hint. Today's runtime starts at zero
+  after a Home Assistant restart. Once a room has a dehumidifier, the overview bar adds
+  **Dehumidify** (rooms whose dehumidifier is running) and **Air** (rooms where airing is
+  recommended), and the analytics chart marks both as bands.
+- **Always immediate** - losing the humidity reading (after a 5 minute hold), disabling the option,
+  changing the device or deleting the room switch the device off right away when it is reachable;
+  an unreachable device is switched off once it is back. With climate control off for the room or
+  globally, RoomMind sends the dehumidifier no commands at all.
+- **After a restart** - while the humidity sensor has not reported yet (it shows unknown for a while
+  after Home Assistant starts), RoomMind leaves the dehumidifier as it is, for up to 5 minutes; a
+  running device keeps running.
+
+Notifications (tank full, airing) go to the mold notification targets, or to a persistent
+notification when none are set.
 
 ## Entities Created
 
@@ -172,7 +226,7 @@ These per-room entities still work but will be removed in a future release. If a
 
 - **Home Assistant** 2026.2+
 - At least one HA area with a `climate.*` entity
-- Optional: temperature sensor, humidity sensor, window sensors, weather entity, schedule helpers, person entities
+- Optional: temperature sensor, humidity sensor, window sensors, weather entity, schedule helpers, person entities, outdoor humidity sensor (airing hint), dehumidifier with tank-full sensor
 
 No cloud services required - everything runs locally.
 
@@ -182,41 +236,3 @@ No cloud services required - everything runs locally.
 - 💡 **Feature requests & ideas** - [Post in Discussions](https://github.com/snazzybean/roommind/discussions/categories/feature-requests) so the community can vote and discuss
 - 🙋 **Questions & usage help** - [Ask in Q&A](https://github.com/snazzybean/roommind/discussions/categories/q-a)
 - 📣 **Announcements** - [Follow Announcements](https://github.com/snazzybean/roommind/discussions/categories/announcements)
-
-### Per-room dehumidifiers
-
-In a room’s **Devices** settings, select a dehumidifier (`humidifier` entity)
-or its power switch. Then enable automatic dehumidification and set humidity
-bounds in the room’s **Schedule, Temperatures & Humidity** settings. A room humidity
-sensor is required. Set the lower and upper relative humidity bounds (defaults:
-50% and 60%). RoomMind starts the device at the upper bound or when the existing
-surface-humidity algorithm detects mold risk above the lower bound. It keeps
-running until humidity reaches the lower bound, preventing rapid cycling.
-A switch happens only after its condition has held for the switching delay
-(Settings → Mold protection → Dehumidifiers, default 10 minutes, 0 = immediately),
-so short peaks such as a shower do not start a full run.
-
-More dehumidifier controls (Settings → Mold protection → Dehumidifiers):
-
-- **Compressor protection:** minimum run (default 10 min) and minimum pause
-  (default 5 min), measured from the device's last real state change.
-- **Quiet hours:** no dehumidifying in a time window (off by default,
-  22:00–07:00), except on critical mold risk.
-- **Airing hint:** in rooms with a window sensor, when outdoor air holds at
-  least 2 g/m³ less water than the room, RoomMind shows "air the room" and
-  notifies (on by default). "Prefer
-  airing" waits 30 minutes before starting the dehumidifier.
-
-Per room, RoomMind also switches the dehumidifier off while a window is open,
-keeps a `humidifier` entity's own target at its minimum while it runs (so its
-built-in humidistat does not stop it early), and can watch a tank-full binary
-sensor: then it notifies, shows "water tank full" and lets mold-prevention
-heating step in. The room view shows today's runtime. A tank sensor of the same
-device is suggested when the dehumidifier is selected; both are set in the
-room's **Devices** settings.
-The dehumidifier runs alongside mold prevention: when mold prevention is
-enabled, its temperature increase still applies in these rooms, so both act on
-mold risk at the same time. Other heating and cooling controls continue to
-follow their schedules.
-Disabling the option, changing the device, deleting the room, or losing the
-humidity reading turns off the controlled device when it is reachable.

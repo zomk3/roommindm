@@ -302,6 +302,8 @@ export interface AnalyticsDataPoint {
   blind_position?: number | null;
   cover_reason?: string;
   device_setpoint?: number | null;
+  dehumidifier_on?: boolean;
+  ventilation?: boolean;
 }
 
 export interface AnalyticsData {

@@ -1490,6 +1490,16 @@ def test_csv_to_points_normal():
     assert p["heating_power"] == 75.0
 
 
+def test_csv_to_points_dehumidifier_and_ventilation():
+    rows = [
+        {"timestamp": "1000", "dehumidifier_on": "True", "ventilation": "False"},
+        {"timestamp": "1300"},  # recorded before these columns existed
+    ]
+    points = _csv_to_points(rows)
+    assert (points[0]["dehumidifier_on"], points[0]["ventilation"]) == (True, False)
+    assert (points[1]["dehumidifier_on"], points[1]["ventilation"]) == (False, False)
+
+
 def test_csv_to_points_window_open_true():
     rows = [
         {

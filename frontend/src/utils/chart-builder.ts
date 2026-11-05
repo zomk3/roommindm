@@ -121,9 +121,13 @@ export function buildChartSeries(
   const heatingBandData: Array<[number, number | null]> = [];
   const coolingBandData: Array<[number, number | null]> = [];
   const windowBandData: Array<[number, number | null]> = [];
+  const dehumidifierBandData: Array<[number, number | null]> = [];
+  const ventilationBandData: Array<[number, number | null]> = [];
   let hasHeating = false,
     hasCooling = false,
-    hasWindow = false;
+    hasWindow = false,
+    hasDehumidifier = false,
+    hasVentilation = false;
 
   for (const p of points) {
     const ts = p.ts * 1000;
@@ -144,6 +148,18 @@ export function buildChartSeries(
       hasWindow = true;
     } else {
       windowBandData.push([ts, null]);
+    }
+    if (p.dehumidifier_on) {
+      dehumidifierBandData.push([ts, 999]);
+      hasDehumidifier = true;
+    } else {
+      dehumidifierBandData.push([ts, null]);
+    }
+    if (p.ventilation) {
+      ventilationBandData.push([ts, 999]);
+      hasVentilation = true;
+    } else {
+      ventilationBandData.push([ts, null]);
     }
   }
 
@@ -191,6 +207,40 @@ export function buildChartSeries(
       showSymbol: false,
       lineStyle: { width: 0 },
       areaStyle: { color: "rgba(0, 150, 136, 0.1)", origin: "start" },
+      tooltip: { show: false },
+      yAxisIndex: 0,
+      z: -1,
+      connectNulls: false,
+    });
+  }
+
+  if (hasDehumidifier) {
+    series.push({
+      id: "dehumidifier_events",
+      type: "line",
+      name: localize("analytics.dehumidifier_period", l),
+      color: "rgb(126, 87, 194)",
+      data: dehumidifierBandData,
+      showSymbol: false,
+      lineStyle: { width: 0 },
+      areaStyle: { color: "rgba(126, 87, 194, 0.1)", origin: "start" },
+      tooltip: { show: false },
+      yAxisIndex: 0,
+      z: -1,
+      connectNulls: false,
+    });
+  }
+
+  if (hasVentilation) {
+    series.push({
+      id: "ventilation_events",
+      type: "line",
+      name: localize("analytics.ventilation_period", l),
+      color: "rgb(38, 166, 154)",
+      data: ventilationBandData,
+      showSymbol: false,
+      lineStyle: { width: 0 },
+      areaStyle: { color: "rgba(38, 166, 154, 0.08)", origin: "start" },
       tooltip: { show: false },
       yAxisIndex: 0,
       z: -1,
@@ -321,6 +371,8 @@ export function buildChartOptions(
               }
             }
             if (closest.window_open) parts.push(localize("analytics.window_open_period", l));
+            if (closest.dehumidifier_on) parts.push(localize("analytics.dehumidifier_period", l));
+            if (closest.ventilation) parts.push(localize("analytics.ventilation_period", l));
             if (parts.length > 0) {
               markup += `<div style="border-top:1px solid rgba(128,128,128,0.3);margin-top:4px;padding-top:4px;color:rgba(255,255,255,0.7)">${parts.join(" \u00B7 ")}</div>`;
             }

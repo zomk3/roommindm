@@ -23,7 +23,11 @@ DETAIL_FIELDS = [
     "cover_reason",
     "device_setpoint",
     "occupancy",
+    "dehumidifier_on",
+    "ventilation",
 ]
+# On/off columns kept as "was on at any time in the bucket" when downsampling
+_ANY_TRUE_FIELDS = ("dehumidifier_on", "ventilation")
 DETAIL_MAX_AGE = 48 * 3600  # 48 hours
 HISTORY_MAX_AGE = 90 * 24 * 3600  # 90 days
 
@@ -88,6 +92,8 @@ class HistoryStore:
                     "cover_reason": data.get("cover_reason", ""),
                     "device_setpoint": data.get("device_setpoint", ""),
                     "occupancy": data.get("occupancy", ""),
+                    "dehumidifier_on": data.get("dehumidifier_on", ""),
+                    "ventilation": data.get("ventilation", ""),
                 }
             )
 
@@ -202,6 +208,11 @@ class HistoryStore:
                 "window_open": bucket[0].get("window_open", ""),
                 "device_setpoint": bucket[0].get("device_setpoint", ""),
             }
+            for field in _ANY_TRUE_FIELDS:
+                values = [r.get(field, "") for r in bucket]
+                avg_row[field] = (
+                    True if any(v in ("True", "true", "1", True) for v in values) else (False if any(values) else "")
+                )
             for field in (
                 "room_temp",
                 "outdoor_temp",
