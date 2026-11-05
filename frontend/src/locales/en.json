@@ -605,11 +605,13 @@
   "dehumidifier.title": "Dehumidifier",
   "dehumidifier.entity": "Dehumidifier or power switch",
   "dehumidifier.enabled": "Automatic dehumidification",
-  "dehumidifier.lower": "Lower humidity bound (%)",
-  "dehumidifier.upper": "Upper humidity bound (%)",
-  "dehumidifier.hint": "Starts at the upper bound or detected mold risk, stops at the lower bound. Works alongside mold-prevention heating. Requires a humidity sensor.",
+  "dehumidifier.lower": "Lower bound (%)",
+  "dehumidifier.upper": "Upper bound (%)",
+  "dehumidifier.hint": "Runs from the upper bound or on mold risk until the lower bound. Independent of the heating.",
   "mold.room_heating_title": "Mold-prevention heating",
-  "mold.room_heating": "Raise temperature on mold risk in this room",
-  "mold.room_heating_hint": "Uses the intensity from Mold Prevention in the settings, which must be enabled there too. Independent of the dehumidifier: enable one, the other or both.",
-  "mold.room_heating_off": "Mold-prevention heating off in this room"
+  "mold.room_heating_hint": "Raise the temperature on mold risk. Uses the intensity from the settings, where Mold Prevention must be enabled.",
+  "mold.room_heating_off": "Mold-prevention heating off in this room",
+  "dehumidifier.requires": "Select a dehumidifier under Devices and a humidity sensor first.",
+  "dehumidifier.lower_hint": "Switches off at this room humidity",
+  "dehumidifier.upper_hint": "Switches on at this room humidity"
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -193,6 +194,11 @@ async def _async_check_version_mismatch(hass: HomeAssistant) -> None:
         ir.async_delete_issue(hass, DOMAIN, "restart_required")
 
 
+def _file_hash(path: Path) -> str:
+    """Short content hash of *path*, for cache busting."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
 async def _async_register_panel(hass: HomeAssistant) -> None:
     """Register the RoomMind custom panel in the sidebar."""
     if hass.data[DOMAIN].get("panel_registered"):
@@ -205,6 +211,10 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
             panel_js,
         )
         return
+
+    # Content hash in the URL: a new build is a new URL, so no browser or app cache
+    # keeps serving the previous panel after an update
+    panel_hash = await hass.async_add_executor_job(_file_hash, panel_js)
 
     try:
         await hass.http.async_register_static_paths(
@@ -225,7 +235,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "roommind-panel",
                     "embed_iframe": False,
                     "trust_external": False,
-                    "js_url": "/roommind/roommind-panel.js",
+                    "js_url": f"/roommind/roommind-panel.js?v={panel_hash}",
                 }
             },
         )
