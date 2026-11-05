@@ -102,6 +102,11 @@ class DehumidifierManager:
         # Released devices that could not be switched off yet (unavailable at release)
         self._pending_off: set[str] = set()
         self._last_humidity: dict[str, tuple[float, float]] = {}
+        # First cycle of a room in this run, while it has had no humidity reading yet: right
+        # after a restart the sensor reports unknown for a while, which is not a sensor loss
+        self._awaiting_first_reading: dict[str, float] = {}
+        # Devices whose own target RoomMind already lowered in their current run
+        self._target_lowered: set[str] = set()
         # Rooms whose climate control is off: RoomMind leaves their device alone (#36)
         self._paused: set[str] = set()
         # Switch waiting for its condition to hold for the delay: area -> (turn on?, since)
@@ -139,16 +144,21 @@ class DehumidifierManager:
         """Keep a humidifier entity's own target at its minimum while RoomMind runs it.
 
         Its built-in humidistat (often a poor sensor next to the unit) would otherwise
-        switch it off before the room reaches RoomMind's lower bound.
+        switch it off before the room reaches RoomMind's lower bound. Tried once per run:
+        a device that puts its target back is not sent the same command every cycle.
         """
         if not entity_id.startswith("humidifier."):
             return
         state = self.hass.states.get(entity_id)
         if state is None or state.state != "on":
+            self._target_lowered.discard(entity_id)  # try again in the next run
             return
+        if entity_id in self._target_lowered:
+            return  # once per run: some devices put their own target back (e.g. in auto mode)
         target, minimum = state.attributes.get("humidity"), state.attributes.get("min_humidity")
         if not isinstance(target, (int, float)) or not isinstance(minimum, (int, float)) or target <= minimum:
             return
+        self._target_lowered.add(entity_id)
         try:
             await self.hass.services.async_call(
                 "humidifier", "set_humidity", {"entity_id": entity_id, "humidity": minimum}, blocking=True
@@ -200,6 +210,7 @@ class DehumidifierManager:
     async def remove_room(self, area_id: str) -> None:
         """Release a room's device, switching it off now or as soon as it is reachable again."""
         self._last_humidity.pop(area_id, None)
+        self._awaiting_first_reading.pop(area_id, None)
         self._paused.discard(area_id)
         self._pending.pop(area_id, None)
         self._status.pop(area_id, None)
@@ -225,10 +236,18 @@ class DehumidifierManager:
             elif await self._set_state(entity, False):
                 self._pending_off.discard(entity)
 
+    def _still_starting(self, area_id: str) -> bool:
+        """No humidity reading for the room yet in this run, and less than the hold time passed."""
+        if area_id in self._last_humidity or self._awaiting_first_reading.get(area_id) == -math.inf:
+            return False
+        started = self._awaiting_first_reading.setdefault(area_id, time.monotonic())
+        return time.monotonic() - started <= HUMIDITY_HOLD_SECONDS
+
     def _held_humidity(self, area_id: str, humidity: float | None) -> float | None:
         now = time.monotonic()
         if humidity is not None and math.isfinite(humidity) and 0 <= humidity <= 100:
             self._last_humidity[area_id] = (humidity, now)
+            self._awaiting_first_reading[area_id] = -math.inf  # the start phase is over
             return humidity
         last = self._last_humidity.get(area_id)
         if last and now - last[1] <= HUMIDITY_HOLD_SECONDS:
@@ -279,6 +298,9 @@ class DehumidifierManager:
         lower = room.get("dehumidifier_lower_bound", 50)
         upper = room.get("dehumidifier_upper_bound", 60)
         humidity = self._held_humidity(area_id, humidity)
+        if humidity is None and self._still_starting(area_id):
+            self._status[area_id] = STATUS_IDLE
+            return  # leave the device as it is until the sensor reports after a restart
         if humidity is None or not 0 < lower < upper <= 100:
             self._pending.pop(area_id, None)
             self._status[area_id] = STATUS_IDLE

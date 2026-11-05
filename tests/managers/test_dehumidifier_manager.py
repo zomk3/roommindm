@@ -65,7 +65,11 @@ async def test_risk_triggers_below_upper_bound(setup_manager):
 async def test_invalid_sensor_stops_device(setup_manager, humidity):
     manager, hass, state, room = setup_manager
     state.state = "on"
-    await manager.evaluate(room, 22, humidity, 15, settings=IMMEDIATE)
+    mono = "custom_components.roommind.managers.dehumidifier_manager.time.monotonic"
+    with patch(mono, return_value=0):
+        await manager.evaluate(room, 22, 55, 15, settings=IMMEDIATE)  # a valid reading first
+    with patch(mono, return_value=301):  # past the 5 minute hold
+        await manager.evaluate(room, 22, humidity, 15, settings=IMMEDIATE)
     assert hass.services.async_call.await_args.args[1] == "turn_off"
 
 
