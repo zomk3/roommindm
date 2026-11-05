@@ -26,7 +26,9 @@ def setup_manager():
 @pytest.mark.asyncio
 async def test_hysteresis(setup_manager):
     manager, hass, state, room = setup_manager
-    with patch("custom_components.roommind.managers.dehumidifier_manager.calculate_mold_risk", return_value=("ok", 55)):
+    with patch(
+        "custom_components.roommind.managers.dehumidifier_manager.calculate_mold_risk", return_value=("ok", 55, None)
+    ):
         await manager.evaluate(room, 22, 60, 15)
         hass.services.async_call.assert_awaited_once_with(
             "switch", "turn_on", {"entity_id": "switch.dryer"}, blocking=True
@@ -45,7 +47,8 @@ async def test_hysteresis(setup_manager):
 async def test_risk_triggers_below_upper_bound(setup_manager):
     manager, hass, state, room = setup_manager
     with patch(
-        "custom_components.roommind.managers.dehumidifier_manager.calculate_mold_risk", return_value=("warning", 85)
+        "custom_components.roommind.managers.dehumidifier_manager.calculate_mold_risk",
+        return_value=("warning", 85, None),
     ):
         await manager.evaluate(room, 18, 55, 0)
         assert hass.services.async_call.await_args.args[1] == "turn_on"

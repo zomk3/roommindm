@@ -26,6 +26,7 @@ from .const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    DEFAULT_MOLD_F_RSI,
     DEFAULT_OUTDOOR_HEATING_MAX,
     DOMAIN,
     HEATING_BOOST_TARGET,
@@ -670,7 +671,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
 
-        await self._dehumidifier_manager.evaluate(room, current_temp, current_humidity, self.outdoor_temp_effective)
+        await self._dehumidifier_manager.evaluate(
+            room,
+            current_temp,
+            current_humidity,
+            self.outdoor_temp_effective,
+            f_rsi=settings.get("mold_f_rsi", DEFAULT_MOLD_F_RSI),
+        )
 
         # --- Outdoor room: skip all control logic ---
         if room.get("is_outdoor", False):
@@ -2289,6 +2296,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
     async def async_room_removed(self, area_id: str) -> None:
         """Remove a deleted room's entities, run state, model and history, then refresh."""
+        await self._dehumidifier_manager.remove_room(area_id)
         self._forget_room(area_id)
         self._model_manager.remove_room(area_id)
         if self._history_store:
@@ -2301,6 +2309,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         The next cycle switches its devices off. No refresh now: it would reach the removed
         entities before HA has taken them down.
         """
+        await self._dehumidifier_manager.remove_room(area_id)
         self._forget_room(area_id)
 
     async def _async_switch_resting_rooms_off(
@@ -2342,7 +2351,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """Drop a room's entities and in-memory run state."""
         from homeassistant.helpers import entity_registry as er
 
-        await self._dehumidifier_manager.remove_room(area_id)
         registry = er.async_get(self.hass)
 
         # Remove entities owned by exactly this area. Exact-match the known

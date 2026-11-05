@@ -8,6 +8,7 @@ import math
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from ..const import DEFAULT_MOLD_F_RSI
 from ..utils.mold_utils import calculate_mold_risk
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,7 +44,12 @@ class DehumidifierManager:
             self._entities.pop(area_id, None)
 
     async def evaluate(
-        self, room: dict, temperature: float | None, humidity: float | None, outdoor_temp: float | None
+        self,
+        room: dict,
+        temperature: float | None,
+        humidity: float | None,
+        outdoor_temp: float | None,
+        f_rsi: float = DEFAULT_MOLD_F_RSI,
     ) -> None:
         """Start on upper bound or mold risk; stop at lower bound or invalid sensors."""
         area_id = room.get("area_id", "unknown")
@@ -67,6 +73,6 @@ class DehumidifierManager:
             return
         risk = "ok"
         if temperature is not None and math.isfinite(temperature):
-            risk, _ = calculate_mold_risk(temperature, humidity, outdoor_temp)
+            risk, _, _ = calculate_mold_risk(temperature, humidity, outdoor_temp, f_rsi=f_rsi)
         if humidity >= upper or risk in ("warning", "critical"):
             await self._set_state(entity, True)
