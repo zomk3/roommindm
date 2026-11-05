@@ -607,5 +607,9 @@
   "dehumidifier.enabled": "Automatische Entfeuchtung",
   "dehumidifier.lower": "Untere Feuchtigkeitsgrenze (%)",
   "dehumidifier.upper": "Obere Feuchtigkeitsgrenze (%)",
-  "dehumidifier.hint": "Startet bei der oberen Grenze oder erkanntem Schimmelrisiko und stoppt bei der unteren Grenze. Ersetzt die Temperaturerhöhung zur Schimmelprävention. Benötigt einen Feuchtigkeitssensor."
+  "dehumidifier.hint": "Startet bei der oberen Grenze oder erkanntem Schimmelrisiko und stoppt bei der unteren Grenze. Läuft zusätzlich zur Temperaturerhöhung der Schimmelprävention. Benötigt einen Feuchtigkeitssensor.",
+  "mold.room_heating_title": "Schimmelprävention per Heizung",
+  "mold.room_heating": "Temperatur bei Schimmelrisiko in diesem Raum erhöhen",
+  "mold.room_heating_hint": "Nutzt die Intensität der Schimmelprävention aus den Einstellungen, die dort ebenfalls aktiviert sein muss. Unabhängig vom Luftentfeuchter: eins, das andere oder beides aktivieren.",
+  "mold.room_heating_off": "Schimmelprävention per Heizung in diesem Raum aus"
 }

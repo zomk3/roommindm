@@ -192,7 +192,9 @@ sensor is required. Set the lower and upper relative humidity bounds (defaults:
 50% and 60%). RoomMind starts the device at the upper bound or when the existing
 surface-humidity algorithm detects mold risk above the lower bound. It keeps
 running until humidity reaches the lower bound, preventing rapid cycling.
-These rooms use the dehumidifier instead of the mold-prevention temperature
-increase. Other heating and cooling controls continue to follow their schedules.
+The dehumidifier runs alongside mold prevention: when mold prevention is
+enabled, its temperature increase still applies in these rooms, so both act on
+mold risk at the same time. Other heating and cooling controls continue to
+follow their schedules.
 Disabling the option, changing the device, deleting the room, or losing the
 humidity reading turns off the controlled device when it is reachable.

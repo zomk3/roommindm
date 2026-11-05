@@ -607,5 +607,9 @@
   "dehumidifier.enabled": "Déshumidification automatique",
   "dehumidifier.lower": "Limite basse d’humidité (%)",
   "dehumidifier.upper": "Limite haute d’humidité (%)",
-  "dehumidifier.hint": "Démarre à la limite haute ou en cas de risque de moisissure détecté, s’arrête à la limite basse. Remplace le chauffage préventif. Nécessite un capteur d’humidité."
+  "dehumidifier.hint": "Démarre à la limite haute ou en cas de risque de moisissure détecté, s’arrête à la limite basse. Fonctionne en complément du chauffage préventif. Nécessite un capteur d’humidité.",
+  "mold.room_heating_title": "Chauffage préventif anti-moisissure",
+  "mold.room_heating": "Augmenter la température en cas de risque de moisissure dans cette pièce",
+  "mold.room_heating_hint": "Utilise l’intensité de la prévention des moisissures des paramètres, qui doit aussi y être activée. Indépendant du déshumidificateur : activez l’un, l’autre ou les deux.",
+  "mold.room_heating_off": "Chauffage préventif désactivé dans cette pièce"
 }

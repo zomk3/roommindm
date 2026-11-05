@@ -3217,6 +3217,27 @@ async def test_save_room_occupancy_eco_roundtrip(ws_hass, store, connection):
 
 
 @pytest.mark.asyncio
+async def test_save_room_mold_prevention_heating_roundtrip(ws_hass, store, connection):
+    """A room can switch its mold-prevention heating off and on again."""
+    await store.async_load()
+    base = {"type": "roommind/rooms/save", "area_id": "office"}
+    await _save_room(ws_hass, connection, {**base, "id": 11, "mold_prevention_heating": False})
+    assert store.get_room("office")["mold_prevention_heating"] is False
+    await _save_room(ws_hass, connection, {**base, "id": 12, "mold_prevention_heating": True})
+    assert store.get_room("office")["mold_prevention_heating"] is True
+
+
+def test_mold_prevention_heating_schema_is_bool():
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "office"}
+    assert schema({**base, "mold_prevention_heating": False})["mold_prevention_heating"] is False
+    with pytest.raises(vol.Invalid):
+        schema({**base, "mold_prevention_heating": "nope"})
+
+
+@pytest.mark.asyncio
 async def test_list_rooms_forwards_occupancy_vacant(ws_hass, store, connection):
     """The dashboard shows the empty-room icon from rooms/list (#180)."""
     await store.async_load()

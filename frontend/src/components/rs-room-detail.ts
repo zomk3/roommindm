@@ -60,6 +60,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _dehumidifierEnabled = false;
   @state() private _dehumidifierLower = 50;
   @state() private _dehumidifierUpper = 60;
+  @state() private _moldPreventionHeating = true;
   @state() private _selectedOccupancySensors: Set<string> = new Set();
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
@@ -273,6 +274,7 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierEnabled = this.config.dehumidifier_enabled ?? false;
       this._dehumidifierLower = this.config.dehumidifier_lower_bound ?? 50;
       this._dehumidifierUpper = this.config.dehumidifier_upper_bound ?? 60;
+      this._moldPreventionHeating = this.config.mold_prevention_heating ?? true;
       this._selectedOccupancySensors = new Set(this.config.occupancy_sensors ?? []);
       this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
       this._preheatEnabled = this.config.preheat_enabled ?? true;
@@ -320,6 +322,7 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierEnabled = false;
       this._dehumidifierLower = 50;
       this._dehumidifierUpper = 60;
+      this._moldPreventionHeating = true;
       this._selectedOccupancySensors = new Set();
       this._occupancyEcoEnabled = false;
       this._preheatEnabled = true;
@@ -541,6 +544,7 @@ export class RsRoomDetail extends LitElement {
                       .dehumidifierEnabled=${this._dehumidifierEnabled}
                       .dehumidifierLower=${this._dehumidifierLower}
                       .dehumidifierUpper=${this._dehumidifierUpper}
+                      .moldPreventionHeating=${this._moldPreventionHeating}
                       .occupancySensors=${this._selectedOccupancySensors}
                       .occupancyEcoEnabled=${this._occupancyEcoEnabled}
                       .occupancyEcoDelay=${this._occupancyEcoDelay}
@@ -810,6 +814,7 @@ export class RsRoomDetail extends LitElement {
             .dehumidifierEnabled=${this._dehumidifierEnabled}
             .dehumidifierLower=${this._dehumidifierLower}
             .dehumidifierUpper=${this._dehumidifierUpper}
+            .moldPreventionHeating=${this._moldPreventionHeating}
             .occupancySensors=${this._selectedOccupancySensors}
             .occupancyEcoEnabled=${this._occupancyEcoEnabled}
             .occupancyEcoDelay=${this._occupancyEcoDelay}
@@ -1045,6 +1050,8 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierLower = value as number;
     } else if (key === "dehumidifier_upper_bound") {
       this._dehumidifierUpper = value as number;
+    } else if (key === "mold_prevention_heating") {
+      this._moldPreventionHeating = value as boolean;
     } else if (key === "occupancy_sensors") {
       this._selectedOccupancySensors = new Set(value as string[]);
     } else if (key === "occupancy_eco_enabled") {
@@ -1197,6 +1204,7 @@ export class RsRoomDetail extends LitElement {
         dehumidifier_enabled: this._dehumidifierEnabled,
         dehumidifier_lower_bound: this._dehumidifierLower,
         dehumidifier_upper_bound: this._dehumidifierUpper,
+        mold_prevention_heating: this._moldPreventionHeating,
         occupancy_sensors: [...this._selectedOccupancySensors],
         occupancy_eco_enabled: this._occupancyEcoEnabled,
         occupancy_eco_delay: this._occupancyEcoDelay,

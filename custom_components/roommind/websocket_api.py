@@ -119,6 +119,7 @@ _ROOM_SAVE_FIELDS = (
     "dehumidifier_enabled",
     "dehumidifier_lower_bound",
     "dehumidifier_upper_bound",
+    "mold_prevention_heating",
     "occupancy_sensors",
     "occupancy_eco_enabled",
     "occupancy_eco_delay",
@@ -426,6 +427,7 @@ async def websocket_list_rooms(
         vol.Optional("dehumidifier_enabled"): bool,
         vol.Optional("dehumidifier_lower_bound"): vol.All(vol.Coerce(float), vol.Range(min=1, max=99)),
         vol.Optional("dehumidifier_upper_bound"): vol.All(vol.Coerce(float), vol.Range(min=2, max=100)),
+        vol.Optional("mold_prevention_heating"): bool,
         vol.Optional("occupancy_sensors"): [str],
         vol.Optional("occupancy_eco_enabled"): bool,
         vol.Optional("occupancy_eco_delay"): vol.All(

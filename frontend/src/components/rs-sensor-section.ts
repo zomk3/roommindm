@@ -21,6 +21,7 @@ export class RsSensorSection extends LitElement {
   @property({ type: Boolean }) public dehumidifierEnabled = false;
   @property({ type: Number }) public dehumidifierLower = 50;
   @property({ type: Number }) public dehumidifierUpper = 60;
+  @property({ type: Boolean }) public moldPreventionHeating = true;
   @property({ attribute: false }) public occupancySensors: Set<string> = new Set();
   @property({ type: Boolean }) public occupancyEcoEnabled = false;
   @property({ type: Number }) public occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
@@ -426,6 +427,7 @@ export class RsSensorSection extends LitElement {
           ? html`
               <div class="section-subtitle">${localize("devices.humidity_sensors", lang)}</div>
               ${this._renderSensorViewRow(this.humiditySensor, "humidity")}
+              ${this.moldPreventionHeating ? nothing : html`<div>${localize("mold.room_heating_off", lang)}</div>`}
             `
           : nothing
       }
@@ -633,6 +635,18 @@ export class RsSensorSection extends LitElement {
         externalSensors: externalHumiditySensor ? [externalHumiditySensor] : [],
         selectedCount: this.humiditySensor ? 1 : 0,
       })}
+      <div class="sensor-block">
+        <span class="block-title">${localize("mold.room_heating_title", lang)}</span>
+        <label
+          ><input
+            type="checkbox"
+            .checked=${this.moldPreventionHeating}
+            @change=${(e: Event) => this._dehumidifierChanged("mold_prevention_heating", (e.target as HTMLInputElement).checked)}
+          />
+          ${localize("mold.room_heating", lang)}</label
+        >
+        <span>${localize("mold.room_heating_hint", lang)}</span>
+      </div>
       <div class="sensor-block">
         <span class="block-title">${localize("dehumidifier.title", lang)}</span>
         <label

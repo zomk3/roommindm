@@ -333,6 +333,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         )
 
         await self._async_switch_resting_rooms_off(stored_rooms, rooms, settings)
+        try:
+            await self._dehumidifier_manager.async_retry_pending_off(rooms)
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Switching off released dehumidifiers failed", exc_info=True)
         for area_id, room in rooms.items():
             # Live, not this cycle's snapshot: an area deleted while the cycle awaited another room
             if not rooms_with_area(self.hass, {area_id: room}):
@@ -677,6 +681,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             current_humidity,
             self.outdoor_temp_effective,
             f_rsi=settings.get("mold_f_rsi", DEFAULT_MOLD_F_RSI),
+            control_active=settings.get("climate_control_active", True) and room.get("climate_control_enabled", True),
         )
 
         # --- Outdoor room: skip all control logic ---
@@ -743,19 +748,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             area_id,
             current_temp,
             current_humidity,
-            (
-                {
-                    **settings,
-                    "mold_detection_enabled": True,
-                    "mold_prevention_enabled": False,
-                    "mold_notifications_enabled": (
-                        settings.get("mold_detection_enabled", False)
-                        and settings.get("mold_notifications_enabled", True)
-                    ),
-                }
-                if room.get("dehumidifier_enabled")
-                else settings
-            ),
+            # Mold-prevention heat needs the global switch and the room's own (default on);
+            # the room's dehumidifier is independent of both
+            settings if room.get("mold_prevention_heating", True) else {**settings, "mold_prevention_enabled": False},
         )
 
         # Load schedule blocks once — used for both target temp resolution and MPC lookahead.

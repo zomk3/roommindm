@@ -525,3 +525,40 @@ async def test_evaluate_passes_custom_f_rsi_from_settings(mm):
     mock_calc.assert_called_once()
     args, kwargs = mock_calc.call_args
     assert kwargs["f_rsi"] == 0.65
+
+
+@pytest.mark.asyncio
+async def test_prevention_switched_off_while_active_ends_it_and_renotifies_later(mm):
+    """Turning prevention off mid-risk (globally or per room) dismisses its notification; on again notifies again."""
+    on = _settings_prevention_notify()
+    off = _settings_prevention_notify(mold_prevention_enabled=False)
+    kwargs = {
+        "area_id": "living",
+        "area_name": "Living Room",
+        "current_temp": 18.0,
+        "current_humidity": 75.0,
+        "outdoor_temp": -5.0,
+        "celsius_delta_to_ha_fn": lambda x: x,
+        "ha_temp_unit_str_fn": lambda: "°C",
+    }
+    with (
+        patch(
+            "custom_components.roommind.managers.mold_manager.calculate_mold_risk",
+            return_value=("warning", 75.0, 14.5),
+        ),
+        patch(
+            "custom_components.roommind.managers.mold_manager.async_send_mold_notification",
+            new_callable=AsyncMock,
+        ) as mock_notify,
+        patch("custom_components.roommind.managers.mold_manager.dismiss_mold_notification") as mock_dismiss,
+    ):
+        assert (await mm.evaluate(settings=on, **kwargs)).prevention_active is True
+        result = await mm.evaluate(settings=off, **kwargs)
+        assert result.prevention_active is False
+        assert result.prevention_delta == 0.0
+        assert "living" not in mm._prevention_active
+        assert [c.args[2] for c in mock_dismiss.call_args_list] == ["prevention"]
+        assert (await mm.evaluate(settings=on, **kwargs)).prevention_active is True
+
+    prevention_notes = [c for c in mock_notify.call_args_list if c.kwargs.get("tag_suffix") == "prevention"]
+    assert len(prevention_notes) == 2

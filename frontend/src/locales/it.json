@@ -601,5 +601,15 @@
   "heat_source.ac_min_outdoor_hint": "Sotto questa temperatura disabilita del tutto il riscaldamento tramite AC, per proteggere la pompa di calore.",
   "heat_source.ac_min_outdoor_suffix": "°C",
   "heat_source.summary_disabled": "La scelta intelligente della fonte è disattivata",
-  "devices.valve_closing_entity_hint": "Mantiene la valvola all'apertura impostata, qualunque cosa voglia la regolazione della testina. Viene compilato automaticamente se il dispositivo lo chiama come il grado di apertura (valve_closing_degree)."
+  "devices.valve_closing_entity_hint": "Mantiene la valvola all'apertura impostata, qualunque cosa voglia la regolazione della testina. Viene compilato automaticamente se il dispositivo lo chiama come il grado di apertura (valve_closing_degree).",
+  "mold.room_heating_title": "Riscaldamento antimuffa",
+  "mold.room_heating": "Aumenta la temperatura in caso di rischio muffa in questa stanza",
+  "mold.room_heating_hint": "Usa l'intensità della prevenzione muffa delle impostazioni, che deve essere attivata anche lì. Indipendente dal deumidificatore: attiva l'uno, l'altro o entrambi.",
+  "mold.room_heating_off": "Riscaldamento antimuffa disattivato in questa stanza",
+  "dehumidifier.title": "Deumidificatore",
+  "dehumidifier.entity": "Deumidificatore o presa comandata",
+  "dehumidifier.enabled": "Deumidificazione automatica",
+  "dehumidifier.lower": "Limite inferiore di umidità (%)",
+  "dehumidifier.upper": "Limite superiore di umidità (%)",
+  "dehumidifier.hint": "Si avvia al limite superiore o con rischio muffa rilevato e si ferma al limite inferiore. Funziona insieme al riscaldamento antimuffa. Richiede un sensore di umidità."
 }

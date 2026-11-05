@@ -607,5 +607,9 @@
   "dehumidifier.enabled": "Automatic dehumidification",
   "dehumidifier.lower": "Lower humidity bound (%)",
   "dehumidifier.upper": "Upper humidity bound (%)",
-  "dehumidifier.hint": "Starts at the upper bound or detected mold risk, stops at the lower bound. Replaces mold-prevention heating. Requires a humidity sensor."
+  "dehumidifier.hint": "Starts at the upper bound or detected mold risk, stops at the lower bound. Works alongside mold-prevention heating. Requires a humidity sensor.",
+  "mold.room_heating_title": "Mold-prevention heating",
+  "mold.room_heating": "Raise temperature on mold risk in this room",
+  "mold.room_heating_hint": "Uses the intensity from Mold Prevention in the settings, which must be enabled there too. Independent of the dehumidifier: enable one, the other or both.",
+  "mold.room_heating_off": "Mold-prevention heating off in this room"
 }

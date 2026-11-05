@@ -67,6 +67,12 @@ class MoldManager:
         """
         result = MoldResult()
 
+        # Prevention switched off (globally or for this room) while active: end it, so its
+        # notification goes and switching it on again notifies again
+        if not settings.get("mold_prevention_enabled") and self._prevention_active.pop(area_id, False):
+            dismiss_mold_notification(self.hass, area_id, "prevention")
+            self._throttler.clear(f"prevent_{area_id}")
+
         if not (settings.get("mold_detection_enabled") or settings.get("mold_prevention_enabled")):
             return result
 
