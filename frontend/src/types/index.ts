@@ -49,6 +49,13 @@ export interface RoomLiveData {
   mold_surface_temp: number | null;
   mold_prevention_active: boolean;
   mold_prevention_delta: number;
+  dehumidifier_active?: boolean;
+  dehumidifier_lower_bound?: number;
+  dehumidifier_status?: "off" | "idle" | "running" | "tank_full" | "window" | "quiet";
+  dehumidifier_runtime_today?: number;
+  ventilation_recommended?: boolean;
+  ventilation_indoor_ah?: number | null;
+  ventilation_outdoor_ah?: number | null;
   blind_position: number | null;
   cover_auto_paused: boolean;
   cover_override_until?: number | null;
@@ -129,6 +136,7 @@ export interface RoomConfig {
   dehumidifier_lower_bound?: number;
   dehumidifier_upper_bound?: number;
   mold_prevention_heating?: boolean;
+  dehumidifier_tank_sensor?: string;
   occupancy_sensors?: string[];
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;
@@ -210,6 +218,14 @@ export interface GlobalSettings {
   mold_humidity_threshold?: number;
   mold_f_rsi?: number;
   mold_sustained_minutes?: number;
+  dehumidifier_delay_minutes?: number;
+  dehumidifier_min_on_minutes?: number;
+  dehumidifier_min_off_minutes?: number;
+  dehumidifier_quiet_enabled?: boolean;
+  dehumidifier_quiet_start?: string;
+  dehumidifier_quiet_end?: string;
+  dehumidifier_ventilation_notify?: boolean;
+  dehumidifier_prefer_ventilation?: boolean;
   mold_notification_cooldown?: number;
   mold_notifications_enabled?: boolean;
   mold_notification_targets?: NotificationTarget[];

@@ -187,11 +187,33 @@ No cloud services required - everything runs locally.
 
 In a room’s **Devices** settings, select a dehumidifier (`humidifier` entity)
 or its power switch. Then enable automatic dehumidification and set humidity
-bounds in the room’s **Sensors** settings. A room humidity
+bounds in the room’s **Schedule, Temperatures & Humidity** settings. A room humidity
 sensor is required. Set the lower and upper relative humidity bounds (defaults:
 50% and 60%). RoomMind starts the device at the upper bound or when the existing
 surface-humidity algorithm detects mold risk above the lower bound. It keeps
 running until humidity reaches the lower bound, preventing rapid cycling.
+A switch happens only after its condition has held for the switching delay
+(Settings → Mold protection → Dehumidifiers, default 10 minutes, 0 = immediately),
+so short peaks such as a shower do not start a full run.
+
+More dehumidifier controls (Settings → Mold protection → Dehumidifiers):
+
+- **Compressor protection:** minimum run (default 10 min) and minimum pause
+  (default 5 min), measured from the device's last real state change.
+- **Quiet hours:** no dehumidifying in a time window (off by default,
+  22:00–07:00), except on critical mold risk.
+- **Airing hint:** in rooms with a window sensor, when outdoor air holds at
+  least 2 g/m³ less water than the room, RoomMind shows "air the room" and
+  notifies (on by default). "Prefer
+  airing" waits 30 minutes before starting the dehumidifier.
+
+Per room, RoomMind also switches the dehumidifier off while a window is open,
+keeps a `humidifier` entity's own target at its minimum while it runs (so its
+built-in humidistat does not stop it early), and can watch a tank-full binary
+sensor: then it notifies, shows "water tank full" and lets mold-prevention
+heating step in. The room view shows today's runtime. A tank sensor of the same
+device is suggested when the dehumidifier is selected; both are set in the
+room's **Devices** settings.
 The dehumidifier runs alongside mold prevention: when mold prevention is
 enabled, its temperature increase still applies in these rooms, so both act on
 mold risk at the same time. Other heating and cooling controls continue to

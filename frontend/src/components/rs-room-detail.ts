@@ -15,6 +15,7 @@ import type {
 import "./rs-hero-status";
 import "./rs-climate-mode-selector";
 import "./rs-schedule-settings";
+import "./rs-mold-protection";
 import "./rs-device-section";
 import "./rs-sensor-section";
 import "./rs-section-card";
@@ -27,6 +28,7 @@ import "../components/shared/rs-toggle-card";
 import "../components/shared/rs-edit-dialog";
 import "../components/shared/rs-info-icon";
 import { localize } from "../utils/localize";
+import { findDeviceSibling, TANK_PATTERN } from "../utils/dehumidifier";
 import { fireSaveStatus } from "../utils/events";
 import { resolveHeatingSystemType } from "../utils/device-utils";
 import { DEFAULT_OCCUPANCY_ECO_DELAY } from "../utils/constants";
@@ -61,6 +63,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _dehumidifierLower = 50;
   @state() private _dehumidifierUpper = 60;
   @state() private _moldPreventionHeating = true;
+  @state() private _dehumidifierTankSensor = "";
   @state() private _selectedOccupancySensors: Set<string> = new Set();
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
@@ -275,6 +278,7 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierLower = this.config.dehumidifier_lower_bound ?? 50;
       this._dehumidifierUpper = this.config.dehumidifier_upper_bound ?? 60;
       this._moldPreventionHeating = this.config.mold_prevention_heating ?? true;
+      this._dehumidifierTankSensor = this.config.dehumidifier_tank_sensor ?? "";
       this._selectedOccupancySensors = new Set(this.config.occupancy_sensors ?? []);
       this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
       this._preheatEnabled = this.config.preheat_enabled ?? true;
@@ -323,6 +327,7 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierLower = 50;
       this._dehumidifierUpper = 60;
       this._moldPreventionHeating = true;
+      this._dehumidifierTankSensor = "";
       this._selectedOccupancySensors = new Set();
       this._occupancyEcoEnabled = false;
       this._preheatEnabled = true;
@@ -480,6 +485,17 @@ export class RsRoomDetail extends LitElement {
                       @eco-heat-changed=${this._onEcoHeatChanged}
                       @eco-cool-changed=${this._onEcoCoolChanged}
                     ></rs-schedule-settings>
+                    <rs-mold-protection
+                      .hass=${this.hass}
+                      .editing=${false}
+                      .humiditySensor=${this._selectedHumiditySensor}
+                      .dehumidifierEntity=${this._dehumidifierEntity}
+                      .dehumidifierEnabled=${this._dehumidifierEnabled}
+                      .dehumidifierLower=${this._dehumidifierLower}
+                      .dehumidifierUpper=${this._dehumidifierUpper}
+                      .moldPreventionHeating=${this._moldPreventionHeating}
+                      @sensor-changed=${this._onSensorChanged}
+                    ></rs-mold-protection>
                     ${
                       this.config
                         ? html`
@@ -517,6 +533,7 @@ export class RsRoomDetail extends LitElement {
                       .selectedTempSensor=${this._selectedTempSensor}
                       .dehumidifierEntity=${this._dehumidifierEntity}
                       @dehumidifier-changed=${this._onSensorChanged}
+                      .dehumidifierTankSensor=${this._dehumidifierTankSensor}
                       .valveProtectionExclude=${this._valveProtectionExclude}
                       .valveProtectionEnabled=${this.valveProtectionEnabled}
                       .coilDryEnabledGlobal=${this.coilDryEnabled}
@@ -540,11 +557,6 @@ export class RsRoomDetail extends LitElement {
                       .editing=${false}
                       .temperatureSensor=${this._selectedTempSensor}
                       .humiditySensor=${this._selectedHumiditySensor}
-                      .dehumidifierEntity=${this._dehumidifierEntity}
-                      .dehumidifierEnabled=${this._dehumidifierEnabled}
-                      .dehumidifierLower=${this._dehumidifierLower}
-                      .dehumidifierUpper=${this._dehumidifierUpper}
-                      .moldPreventionHeating=${this._moldPreventionHeating}
                       .occupancySensors=${this._selectedOccupancySensors}
                       .occupancyEcoEnabled=${this._occupancyEcoEnabled}
                       .occupancyEcoDelay=${this._occupancyEcoDelay}
@@ -753,6 +765,17 @@ export class RsRoomDetail extends LitElement {
             @eco-cool-changed=${this._onEcoCoolChanged}
             @preheat-changed=${this._onPreheatChanged}
           ></rs-schedule-settings>
+          <rs-mold-protection
+            .hass=${this.hass}
+            .editing=${true}
+            .humiditySensor=${this._selectedHumiditySensor}
+            .dehumidifierEntity=${this._dehumidifierEntity}
+            .dehumidifierEnabled=${this._dehumidifierEnabled}
+            .dehumidifierLower=${this._dehumidifierLower}
+            .dehumidifierUpper=${this._dehumidifierUpper}
+            .moldPreventionHeating=${this._moldPreventionHeating}
+            @sensor-changed=${this._onSensorChanged}
+          ></rs-mold-protection>
         </rs-edit-dialog>`;
       case "devices":
         return html`<rs-edit-dialog
@@ -787,6 +810,7 @@ export class RsRoomDetail extends LitElement {
             .selectedTempSensor=${this._selectedTempSensor}
             .dehumidifierEntity=${this._dehumidifierEntity}
             @dehumidifier-changed=${this._onSensorChanged}
+            .dehumidifierTankSensor=${this._dehumidifierTankSensor}
             .valveProtectionExclude=${this._valveProtectionExclude}
             .valveProtectionEnabled=${this.valveProtectionEnabled}
             .coilDryEnabledGlobal=${this.coilDryEnabled}
@@ -810,11 +834,6 @@ export class RsRoomDetail extends LitElement {
             .editing=${true}
             .temperatureSensor=${this._selectedTempSensor}
             .humiditySensor=${this._selectedHumiditySensor}
-            .dehumidifierEntity=${this._dehumidifierEntity}
-            .dehumidifierEnabled=${this._dehumidifierEnabled}
-            .dehumidifierLower=${this._dehumidifierLower}
-            .dehumidifierUpper=${this._dehumidifierUpper}
-            .moldPreventionHeating=${this._moldPreventionHeating}
             .occupancySensors=${this._selectedOccupancySensors}
             .occupancyEcoEnabled=${this._occupancyEcoEnabled}
             .occupancyEcoDelay=${this._occupancyEcoDelay}
@@ -1043,7 +1062,19 @@ export class RsRoomDetail extends LitElement {
       if (!value) this._dehumidifierEnabled = false;
     } else if (key === "dehumidifier_entity") {
       this._dehumidifierEntity = value as string;
-      if (!value) this._dehumidifierEnabled = false;
+      if (!value) {
+        this._dehumidifierEnabled = false;
+        this._dehumidifierTankSensor = "";
+      }
+      // Suggest the device's own tank sensor
+      if (value && !this._dehumidifierTankSensor) {
+        this._dehumidifierTankSensor = findDeviceSibling(
+          this.hass,
+          value as string,
+          "binary_sensor",
+          TANK_PATTERN,
+        );
+      }
     } else if (key === "dehumidifier_enabled") {
       this._dehumidifierEnabled = value as boolean;
     } else if (key === "dehumidifier_lower_bound") {
@@ -1052,6 +1083,8 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierUpper = value as number;
     } else if (key === "mold_prevention_heating") {
       this._moldPreventionHeating = value as boolean;
+    } else if (key === "dehumidifier_tank_sensor") {
+      this._dehumidifierTankSensor = value as string;
     } else if (key === "occupancy_sensors") {
       this._selectedOccupancySensors = new Set(value as string[]);
     } else if (key === "occupancy_eco_enabled") {
@@ -1205,6 +1238,7 @@ export class RsRoomDetail extends LitElement {
         dehumidifier_lower_bound: this._dehumidifierLower,
         dehumidifier_upper_bound: this._dehumidifierUpper,
         mold_prevention_heating: this._moldPreventionHeating,
+        dehumidifier_tank_sensor: this._dehumidifierTankSensor,
         occupancy_sensors: [...this._selectedOccupancySensors],
         occupancy_eco_enabled: this._occupancyEcoEnabled,
         occupancy_eco_delay: this._occupancyEcoDelay,

@@ -529,6 +529,29 @@ export class RsAreaCard extends LitElement {
               : nothing
           }
           ${
+            live.dehumidifier_active
+              ? html`<span class="mold-badge prevention">
+                  <ha-icon icon="mdi:air-humidifier"></ha-icon>
+                  ${localize("card.dehumidifier_active", this.hass.language, {
+                    value: String(live.dehumidifier_lower_bound ?? 50),
+                  })}
+                </span>`
+              : live.dehumidifier_status === "tank_full"
+                ? html`<span class="mold-badge warning">
+                    <ha-icon icon="mdi:water-off"></ha-icon>
+                    ${localize("card.dehumidifier_tank_full", this.hass.language)}
+                  </span>`
+                : nothing
+          }
+          ${
+            live.ventilation_recommended
+              ? html`<span class="mold-badge prevention">
+                  <ha-icon icon="mdi:window-open-variant"></ha-icon>
+                  ${localize("card.ventilation_short", this.hass.language)}
+                </span>`
+              : nothing
+          }
+          ${
             live.compressor_protection_until != null
               ? html`<span class="compressor-badge">
                   <ha-icon icon="mdi:timer-sand"></ha-icon>

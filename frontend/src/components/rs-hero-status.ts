@@ -4,6 +4,7 @@ import type { HomeAssistant, HassArea, RoomConfig, OverrideType } from "../types
 import { getModeClass, formatMode, minutesLeft } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { localize } from "../utils/localize";
+import { formatRuntime } from "../utils/dehumidifier";
 import { formatTemp, tempUnit, toDisplayDelta } from "../utils/temperature";
 import "./shared/rs-info-icon";
 
@@ -476,6 +477,54 @@ export class RsHeroStatus extends LitElement {
     this._nameInput = "";
   }
 
+  private _renderDehumidifier(live: NonNullable<RoomConfig["live"]>) {
+    const l = this.hass?.language ?? "en";
+    const status = live.dehumidifier_status;
+    const lines = [];
+    if (live.dehumidifier_active) {
+      lines.push(
+        html`<div class="hero-metric info">
+          <ha-icon icon="mdi:air-humidifier"></ha-icon>
+          ${localize("card.dehumidifier_active", l, { value: String(live.dehumidifier_lower_bound ?? 50) })}
+          ·
+          ${localize("card.dehumidifier_today", l, {
+            value: formatRuntime(live.dehumidifier_runtime_today ?? 0),
+          })}
+        </div>`,
+      );
+    } else if (status === "tank_full") {
+      lines.push(
+        html`<div class="hero-metric warning">
+          <ha-icon icon="mdi:water-off"></ha-icon>
+          ${localize("card.dehumidifier_tank_full", l)}
+        </div>`,
+      );
+    } else if (status === "window" || status === "quiet") {
+      lines.push(
+        html`<div class="hero-metric info">
+          <ha-icon icon="mdi:air-humidifier-off"></ha-icon>
+          ${localize(status === "window" ? "card.dehumidifier_paused_window" : "card.dehumidifier_paused_quiet", l)}
+        </div>`,
+      );
+    }
+    if (
+      live.ventilation_recommended &&
+      live.ventilation_indoor_ah != null &&
+      live.ventilation_outdoor_ah != null
+    ) {
+      lines.push(
+        html`<div class="hero-metric info">
+          <ha-icon icon="mdi:window-open-variant"></ha-icon>
+          ${localize("card.ventilation_recommended", l, {
+            outdoor: live.ventilation_outdoor_ah.toFixed(1),
+            indoor: live.ventilation_indoor_ah.toFixed(1),
+          })}
+        </div>`,
+      );
+    }
+    return lines;
+  }
+
   render() {
     const live = this.config?.live;
     const mode = live?.mode;
@@ -729,6 +778,7 @@ export class RsHeroStatus extends LitElement {
                       </div>`
                     : nothing
                 }
+                ${this.isOutdoor ? nothing : this._renderDehumidifier(live)}
                 ${
                   live.learning_paused_reason === "outdoor_unavailable" && !this.isOutdoor
                     ? html`<div class="hero-metric warning learning-paused">

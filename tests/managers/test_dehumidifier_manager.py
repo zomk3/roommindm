@@ -6,6 +6,9 @@ import pytest
 
 from custom_components.roommind.managers.dehumidifier_manager import DehumidifierManager
 
+# The switching logic without the delay and compressor protection (tested on their own)
+IMMEDIATE = {"dehumidifier_delay_minutes": 0, "dehumidifier_min_on_minutes": 0, "dehumidifier_min_off_minutes": 0}
+
 
 @pytest.fixture
 def setup_manager():
@@ -29,15 +32,15 @@ async def test_hysteresis(setup_manager):
     with patch(
         "custom_components.roommind.managers.dehumidifier_manager.calculate_mold_risk", return_value=("ok", 55, None)
     ):
-        await manager.evaluate(room, 22, 60, 15)
+        await manager.evaluate(room, 22, 60, 15, settings=IMMEDIATE)
         hass.services.async_call.assert_awaited_once_with(
             "switch", "turn_on", {"entity_id": "switch.dryer"}, blocking=True
         )
         hass.services.async_call.reset_mock()
         state.state = "on"
-        await manager.evaluate(room, 22, 55, 15)
+        await manager.evaluate(room, 22, 55, 15, settings=IMMEDIATE)
         hass.services.async_call.assert_not_awaited()
-        await manager.evaluate(room, 22, 50, 15)
+        await manager.evaluate(room, 22, 50, 15, settings=IMMEDIATE)
         hass.services.async_call.assert_awaited_once_with(
             "switch", "turn_off", {"entity_id": "switch.dryer"}, blocking=True
         )
@@ -50,10 +53,10 @@ async def test_risk_triggers_below_upper_bound(setup_manager):
         "custom_components.roommind.managers.dehumidifier_manager.calculate_mold_risk",
         return_value=("warning", 85, None),
     ):
-        await manager.evaluate(room, 18, 55, 0)
+        await manager.evaluate(room, 18, 55, 0, settings=IMMEDIATE)
         assert hass.services.async_call.await_args.args[1] == "turn_on"
         hass.services.async_call.reset_mock()
-        await manager.evaluate(room, 18, 50, 0)
+        await manager.evaluate(room, 18, 50, 0, settings=IMMEDIATE)
         hass.services.async_call.assert_not_awaited()
 
 
@@ -62,20 +65,20 @@ async def test_risk_triggers_below_upper_bound(setup_manager):
 async def test_invalid_sensor_stops_device(setup_manager, humidity):
     manager, hass, state, room = setup_manager
     state.state = "on"
-    await manager.evaluate(room, 22, humidity, 15)
+    await manager.evaluate(room, 22, humidity, 15, settings=IMMEDIATE)
     assert hass.services.async_call.await_args.args[1] == "turn_off"
 
 
 @pytest.mark.asyncio
 async def test_disable_and_reassign_stop_previous_device(setup_manager):
     manager, hass, state, room = setup_manager
-    await manager.evaluate(room, 22, 65, 15)
+    await manager.evaluate(room, 22, 65, 15, settings=IMMEDIATE)
     state.state = "on"
     room["dehumidifier_entity"] = "humidifier.dryer"
-    await manager.evaluate(room, 22, 65, 15)
+    await manager.evaluate(room, 22, 65, 15, settings=IMMEDIATE)
     assert hass.services.async_call.await_args.args == ("switch", "turn_off", {"entity_id": "switch.dryer"})
     room["dehumidifier_enabled"] = False
-    await manager.evaluate(room, 22, 65, 15)
+    await manager.evaluate(room, 22, 65, 15, settings=IMMEDIATE)
     assert hass.services.async_call.await_args.args == ("humidifier", "turn_off", {"entity_id": "humidifier.dryer"})
     assert not manager._entities
 
@@ -83,7 +86,7 @@ async def test_disable_and_reassign_stop_previous_device(setup_manager):
 @pytest.mark.asyncio
 async def test_removed_room_stops_device(setup_manager):
     manager, hass, state, room = setup_manager
-    await manager.evaluate(room, 22, 65, 15)
+    await manager.evaluate(room, 22, 65, 15, settings=IMMEDIATE)
     state.state = "on"
     await manager.remove_room("bathroom")
     assert hass.services.async_call.await_args.args[1] == "turn_off"
@@ -117,9 +120,9 @@ def _calls(hass) -> list[tuple]:
 async def test_unreachable_old_device_does_not_block_replacement():
     states = {"switch.old": "on", "switch.new": "off"}
     manager, hass = _multi_state_manager(states)
-    await manager.evaluate(_room("switch.old"), 22, 70, 15)
+    await manager.evaluate(_room("switch.old"), 22, 70, 15, settings=IMMEDIATE)
     states["switch.old"] = "unavailable"
-    await manager.evaluate(_room("switch.new"), 22, 70, 15)
+    await manager.evaluate(_room("switch.new"), 22, 70, 15, settings=IMMEDIATE)
     assert ("switch", "turn_on", {"entity_id": "switch.new"}) in _calls(hass)
     assert manager._entities == {"bathroom": "switch.new"}
 
@@ -128,9 +131,9 @@ async def test_unreachable_old_device_does_not_block_replacement():
 async def test_released_unreachable_device_is_switched_off_when_back():
     states = {"switch.old": "on", "switch.new": "on"}
     manager, hass = _multi_state_manager(states)
-    await manager.evaluate(_room("switch.old"), 22, 55, 15)
+    await manager.evaluate(_room("switch.old"), 22, 55, 15, settings=IMMEDIATE)
     states["switch.old"] = "unavailable"
-    await manager.evaluate(_room("switch.new"), 22, 55, 15)
+    await manager.evaluate(_room("switch.new"), 22, 55, 15, settings=IMMEDIATE)
     assert not _calls(hass)
     states["switch.old"] = "on"
     await manager.async_retry_pending_off({"bathroom": _room("switch.new")})
@@ -142,13 +145,13 @@ async def test_released_unreachable_device_is_switched_off_when_back():
 async def test_released_device_taken_over_by_another_room_is_not_switched_off():
     states = {"switch.dryer": "on", "switch.other": "on"}
     manager, hass = _multi_state_manager(states)
-    await manager.evaluate(_room("switch.dryer"), 22, 55, 15)
+    await manager.evaluate(_room("switch.dryer"), 22, 55, 15, settings=IMMEDIATE)
     states["switch.dryer"] = "unavailable"
-    await manager.evaluate(_room("switch.other"), 22, 55, 15)
+    await manager.evaluate(_room("switch.other"), 22, 55, 15, settings=IMMEDIATE)
     states["switch.dryer"] = "on"
     rooms = {"bathroom": _room("switch.other"), "cellar": _room("switch.dryer", area_id="cellar")}
     await manager.async_retry_pending_off(rooms)  # runs before the rooms, the cellar not evaluated yet
-    await manager.evaluate(rooms["cellar"], 22, 55, 15)
+    await manager.evaluate(rooms["cellar"], 22, 55, 15, settings=IMMEDIATE)
     assert ("switch", "turn_off", {"entity_id": "switch.dryer"}) not in _calls(hass)
     assert not manager._pending_off
 
@@ -156,10 +159,12 @@ async def test_released_device_taken_over_by_another_room_is_not_switched_off():
 @pytest.mark.asyncio
 async def test_climate_control_off_sends_nothing():
     manager, hass = _multi_state_manager({"switch.dryer": "off"})
-    await manager.evaluate(_room("switch.dryer"), 22, 80, 15, control_active=False)
-    await manager.evaluate(_room("switch.dryer", dehumidifier_enabled=False), 22, 80, 15, control_active=False)
+    await manager.evaluate(_room("switch.dryer"), 22, 80, 15, control_active=False, settings=IMMEDIATE)
+    await manager.evaluate(
+        _room("switch.dryer", dehumidifier_enabled=False), 22, 80, 15, control_active=False, settings=IMMEDIATE
+    )
     assert not _calls(hass)
-    await manager.evaluate(_room("switch.dryer"), 22, 80, 15)
+    await manager.evaluate(_room("switch.dryer"), 22, 80, 15, settings=IMMEDIATE)
     assert _calls(hass) == [("switch", "turn_on", {"entity_id": "switch.dryer"})]
 
 
@@ -167,10 +172,133 @@ async def test_climate_control_off_sends_nothing():
 async def test_short_humidity_dropout_holds_last_value():
     manager, hass = _multi_state_manager({"switch.dryer": "on"})
     with patch("custom_components.roommind.managers.dehumidifier_manager.time.monotonic", return_value=1000):
-        await manager.evaluate(_room("switch.dryer"), 22, 55, 15)
+        await manager.evaluate(_room("switch.dryer"), 22, 55, 15, settings=IMMEDIATE)
     with patch("custom_components.roommind.managers.dehumidifier_manager.time.monotonic", return_value=1060):
-        await manager.evaluate(_room("switch.dryer"), 22, None, 15)
+        await manager.evaluate(_room("switch.dryer"), 22, None, 15, settings=IMMEDIATE)
     assert not _calls(hass)
     with patch("custom_components.roommind.managers.dehumidifier_manager.time.monotonic", return_value=1400):
-        await manager.evaluate(_room("switch.dryer"), 22, None, 15)
+        await manager.evaluate(_room("switch.dryer"), 22, None, 15, settings=IMMEDIATE)
     assert _calls(hass) == [("switch", "turn_off", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_is_running_reflects_controlled_device_state():
+    states = {"switch.dryer": "on"}
+    manager, _ = _multi_state_manager(states)
+    assert manager.is_running("bathroom") is False  # not controlled yet
+    await manager.evaluate(_room("switch.dryer"), 22, 55, 15, settings=IMMEDIATE)
+    assert manager.is_running("bathroom") is True
+    states["switch.dryer"] = "off"  # e.g. the device stopped itself
+    assert manager.is_running("bathroom") is False
+    states["switch.dryer"] = "on"
+    await manager.evaluate(_room("switch.dryer"), 22, 55, 15, control_active=False, settings=IMMEDIATE)
+    assert manager.is_running("bathroom") is False  # climate control off: not RoomMind's
+    await manager.evaluate(_room("switch.dryer"), 22, 55, 15, settings=IMMEDIATE)
+    assert manager.is_running("bathroom") is True
+    await manager.remove_room("bathroom")
+    assert manager.is_running("bathroom") is False
+
+
+def _at(seconds: float):
+    return patch("custom_components.roommind.managers.dehumidifier_manager.time.monotonic", return_value=seconds)
+
+
+@pytest.mark.asyncio
+async def test_delay_switches_on_only_after_condition_held():
+    manager, hass = _multi_state_manager({"switch.dryer": "off"})
+    with _at(0):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    with _at(599):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    assert not _calls(hass)
+    with _at(600):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    assert _calls(hass) == [("switch", "turn_on", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_delay_switches_off_only_after_condition_held():
+    manager, hass = _multi_state_manager({"switch.dryer": "on"})
+    with _at(0):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 48, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    with _at(300):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 48, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    assert not _calls(hass)
+    with _at(600):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 48, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    assert _calls(hass) == [("switch", "turn_off", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_short_peak_back_in_band_restarts_the_delay():
+    manager, hass = _multi_state_manager({"switch.dryer": "off"})
+    room = _room("switch.dryer")
+    with _at(0):
+        await manager.evaluate(
+            room, 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )  # shower peak
+    with _at(300):
+        await manager.evaluate(
+            room, 22, 55, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )  # back in the band
+    with _at(600):
+        await manager.evaluate(
+            room, 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )  # new peak: delay starts again
+    with _at(1100):
+        await manager.evaluate(room, 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10})
+    assert not _calls(hass)
+    with _at(1200):
+        await manager.evaluate(room, 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10})
+    assert _calls(hass) == [("switch", "turn_on", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_delay_does_not_hold_back_sensor_loss_or_disabling():
+    states = {"switch.dryer": "on"}
+    manager, hass = _multi_state_manager(states)
+    with _at(0):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 55, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    with _at(400):  # past the 5 minute humidity hold
+        await manager.evaluate(
+            _room("switch.dryer"), 22, None, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    assert _calls(hass) == [("switch", "turn_off", {"entity_id": "switch.dryer"})]
+    hass.services.async_call.reset_mock()
+    with _at(500):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 55, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+        await manager.evaluate(
+            _room("switch.dryer", dehumidifier_enabled=False),
+            22,
+            55,
+            15,
+            settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10},
+        )
+    assert _calls(hass) == [("switch", "turn_off", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_delay_does_not_restart_while_device_already_matches():
+    manager, hass = _multi_state_manager({"switch.dryer": "on"})
+    with _at(0):
+        await manager.evaluate(
+            _room("switch.dryer"), 22, 65, 15, settings={**IMMEDIATE, "dehumidifier_delay_minutes": 10}
+        )
+    assert not manager._pending
+    assert not _calls(hass)

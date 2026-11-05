@@ -64,6 +64,14 @@ export class RsSettings extends LitElement {
   @state() private _moldHumidityThreshold = 70;
   @state() private _moldFRsi = 0.8;
   @state() private _moldSustainedMinutes = 30;
+  @state() private _dehumidifierDelayMinutes = 10;
+  @state() private _dehumidifierMinOnMinutes = 10;
+  @state() private _dehumidifierMinOffMinutes = 5;
+  @state() private _dehumidifierQuietEnabled = false;
+  @state() private _dehumidifierQuietStart = "22:00";
+  @state() private _dehumidifierQuietEnd = "07:00";
+  @state() private _dehumidifierVentilationNotify = true;
+  @state() private _dehumidifierPreferVentilation = false;
   @state() private _moldNotificationCooldown = 60;
   @state() private _moldNotificationsEnabled = true;
   @state() private _moldNotificationTargets: NotificationTarget[] = [];
@@ -129,6 +137,14 @@ export class RsSettings extends LitElement {
       this._moldHumidityThreshold = s.mold_humidity_threshold ?? 70;
       this._moldFRsi = s.mold_f_rsi ?? 0.8;
       this._moldSustainedMinutes = s.mold_sustained_minutes ?? 30;
+      this._dehumidifierDelayMinutes = s.dehumidifier_delay_minutes ?? 10;
+      this._dehumidifierMinOnMinutes = s.dehumidifier_min_on_minutes ?? 10;
+      this._dehumidifierMinOffMinutes = s.dehumidifier_min_off_minutes ?? 5;
+      this._dehumidifierQuietEnabled = s.dehumidifier_quiet_enabled ?? false;
+      this._dehumidifierQuietStart = s.dehumidifier_quiet_start ?? "22:00";
+      this._dehumidifierQuietEnd = s.dehumidifier_quiet_end ?? "07:00";
+      this._dehumidifierVentilationNotify = s.dehumidifier_ventilation_notify ?? true;
+      this._dehumidifierPreferVentilation = s.dehumidifier_prefer_ventilation ?? false;
       this._moldNotificationCooldown = s.mold_notification_cooldown ?? 60;
       this._moldNotificationsEnabled = s.mold_notifications_enabled ?? true;
       this._moldNotificationTargets = s.mold_notification_targets ?? [];
@@ -309,6 +325,14 @@ export class RsSettings extends LitElement {
           .moldHumidityThreshold=${this._moldHumidityThreshold}
           .moldFRsi=${this._moldFRsi}
           .moldSustainedMinutes=${this._moldSustainedMinutes}
+          .dehumidifierDelayMinutes=${this._dehumidifierDelayMinutes}
+          .dehumidifierMinOnMinutes=${this._dehumidifierMinOnMinutes}
+          .dehumidifierMinOffMinutes=${this._dehumidifierMinOffMinutes}
+          .dehumidifierQuietEnabled=${this._dehumidifierQuietEnabled}
+          .dehumidifierQuietStart=${this._dehumidifierQuietStart}
+          .dehumidifierQuietEnd=${this._dehumidifierQuietEnd}
+          .dehumidifierVentilationNotify=${this._dehumidifierVentilationNotify}
+          .dehumidifierPreferVentilation=${this._dehumidifierPreferVentilation}
           .moldPreventionEnabled=${this._moldPreventionEnabled}
           .moldPreventionIntensity=${this._moldPreventionIntensity}
           @setting-changed=${this._onSettingChanged}
@@ -444,6 +468,14 @@ export class RsSettings extends LitElement {
         mold_humidity_threshold: this._moldHumidityThreshold,
         mold_f_rsi: this._moldFRsi,
         mold_sustained_minutes: this._moldSustainedMinutes,
+        dehumidifier_delay_minutes: this._dehumidifierDelayMinutes,
+        dehumidifier_min_on_minutes: this._dehumidifierMinOnMinutes,
+        dehumidifier_min_off_minutes: this._dehumidifierMinOffMinutes,
+        dehumidifier_quiet_enabled: this._dehumidifierQuietEnabled,
+        dehumidifier_quiet_start: this._dehumidifierQuietStart,
+        dehumidifier_quiet_end: this._dehumidifierQuietEnd,
+        dehumidifier_ventilation_notify: this._dehumidifierVentilationNotify,
+        dehumidifier_prefer_ventilation: this._dehumidifierPreferVentilation,
         mold_notification_cooldown: this._moldNotificationCooldown,
         mold_notifications_enabled: this._moldNotificationsEnabled,
         mold_notification_targets: this._moldNotificationTargets.filter((t) => t.entity_id),

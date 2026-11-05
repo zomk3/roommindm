@@ -150,6 +150,15 @@ MOLD_SURFACE_RH_WARNING = 70.0  # estimated surface RH % — warning threshold
 MOLD_SURFACE_RH_CRITICAL = 80.0  # estimated surface RH % — critical threshold
 DEFAULT_MOLD_HUMIDITY_THRESHOLD = 70.0  # room air RH % — notification trigger
 DEFAULT_MOLD_SUSTAINED_MINUTES = 30  # minutes risk must persist before notification
+DEFAULT_DEHUMIDIFIER_DELAY_MINUTES = 10  # minutes a switch condition must hold before the dehumidifier switches
+DEFAULT_DEHUMIDIFIER_MIN_ON_MINUTES = 10  # compressor protection: minimum run before RoomMind switches off
+DEFAULT_DEHUMIDIFIER_MIN_OFF_MINUTES = 5  # compressor protection: minimum pause before RoomMind switches on
+DEFAULT_DEHUMIDIFIER_QUIET_START = "22:00"
+DEFAULT_DEHUMIDIFIER_QUIET_END = "07:00"
+# Airing beats dehumidifying when outdoor air holds this much less water (g/m³)
+VENTILATION_ABS_HUMIDITY_MARGIN = 2.0
+VENTILATION_PREFER_MINUTES = 30  # "prefer airing": hold the dehumidifier back this long
+VENTILATION_NOTIFY_COOLDOWN_MINUTES = 120
 DEFAULT_MOLD_COOLDOWN_MINUTES = 60  # minutes between repeated notifications per room
 MOLD_PREVENTION_DELTAS = {"light": 1.0, "medium": 2.0, "strong": 3.0}
 MOLD_HYSTERESIS = 5.0  # surface RH must drop this much below warning to clear

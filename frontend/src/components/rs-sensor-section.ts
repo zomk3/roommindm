@@ -6,12 +6,10 @@ import { localize } from "../utils/localize";
 import { openEntityInfo } from "../utils/events";
 import { tempUnit } from "../utils/temperature";
 import { inputStyles } from "../styles/input-styles";
-import { toggleFieldStyles } from "../styles/toggle-field-styles";
 import { DEFAULT_OCCUPANCY_ECO_DELAY, MIN_OCCUPANCY_ECO_DELAY } from "../utils/constants";
 import "./shared/rs-toggle-row";
 
 type SensorKind = "temp" | "humidity" | "occupancy" | "window";
-type BlockKind = SensorKind | "mold";
 
 @customElement("rs-sensor-section")
 export class RsSensorSection extends LitElement {
@@ -19,11 +17,6 @@ export class RsSensorSection extends LitElement {
   @property({ attribute: false }) public area!: HassArea;
   @property({ type: String }) public temperatureSensor = "";
   @property({ type: String }) public humiditySensor = "";
-  @property({ type: String }) public dehumidifierEntity = "";
-  @property({ type: Boolean }) public dehumidifierEnabled = false;
-  @property({ type: Number }) public dehumidifierLower = 50;
-  @property({ type: Number }) public dehumidifierUpper = 60;
-  @property({ type: Boolean }) public moldPreventionHeating = true;
   @property({ attribute: false }) public occupancySensors: Set<string> = new Set();
   @property({ type: Boolean }) public occupancyEcoEnabled = false;
   @property({ type: Number }) public occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
@@ -35,11 +28,10 @@ export class RsSensorSection extends LitElement {
   @property() public language = "en";
 
   @state() private _pickerOpen = false;
-  @state() private _collapsed: Partial<Record<BlockKind, boolean>> = {};
+  @state() private _collapsed: Partial<Record<SensorKind, boolean>> = {};
 
   static styles = [
     inputStyles,
-    toggleFieldStyles,
     css`
       :host {
         display: block;
@@ -258,11 +250,6 @@ export class RsSensorSection extends LitElement {
         margin-top: 8px;
       }
 
-      .mold-body {
-        gap: 16px;
-        padding-top: 4px;
-      }
-
       .delay-fields ha-textfield {
         flex: 1;
       }
@@ -410,13 +397,7 @@ export class RsSensorSection extends LitElement {
     const hasOccupancySensors = this.occupancySensors.size > 0;
     const hasWindowSensors = this.windowSensors.size > 0;
 
-    if (
-      !hasTempSensor &&
-      !hasHumiditySensor &&
-      !hasOccupancySensors &&
-      !hasWindowSensors &&
-      !this.dehumidifierEntity
-    ) {
+    if (!hasTempSensor && !hasHumiditySensor && !hasOccupancySensors && !hasWindowSensors) {
       return nothing;
     }
 
@@ -435,19 +416,6 @@ export class RsSensorSection extends LitElement {
           ? html`
               <div class="section-subtitle">${localize("devices.humidity_sensors", lang)}</div>
               ${this._renderSensorViewRow(this.humiditySensor, "humidity")}
-              ${this.moldPreventionHeating ? nothing : html`<div>${localize("mold.room_heating_off", lang)}</div>`}
-            `
-          : nothing
-      }
-      ${
-        this.dehumidifierEntity
-          ? html`
-              <div class="section-subtitle">${localize("dehumidifier.title", lang)}</div>
-              <div>
-                ${this.hass.states[this.dehumidifierEntity]?.attributes.friendly_name ?? this.dehumidifierEntity}
-                · ${this.dehumidifierLower}–${this.dehumidifierUpper}%
-                ${this.dehumidifierEnabled ? html` · ${localize("dehumidifier.enabled", lang)}` : nothing}
-              </div>
             `
           : nothing
       }
@@ -643,7 +611,6 @@ export class RsSensorSection extends LitElement {
         externalSensors: externalHumiditySensor ? [externalHumiditySensor] : [],
         selectedCount: this.humiditySensor ? 1 : 0,
       })}
-      ${this._renderMoldBlock(lang)}
       ${this._renderBlock({
         kind: "occupancy",
         icon: "mdi:account-eye",
@@ -731,122 +698,6 @@ export class RsSensorSection extends LitElement {
           : nothing
       }
     `;
-  }
-
-  private _renderMoldBlock(lang: string) {
-    const isCollapsed = this._collapsed.mold ?? true;
-    const enabledCount = Number(this.moldPreventionHeating) + Number(this.dehumidifierEnabled);
-    const dehumidifierReady = !!this.dehumidifierEntity && !!this.humiditySensor;
-    return html`
-      <div class="sensor-block ${isCollapsed ? "collapsed" : ""}">
-        <div class="block-header" @click=${() => this._toggleBlock("mold")}>
-          <ha-icon icon="mdi:water-alert"></ha-icon>
-          <div class="block-title">${localize("mold.title", lang)}</div>
-          ${
-            enabledCount > 0
-              ? html`<span class="count-chip has-selection">${enabledCount}</span>`
-              : nothing
-          }
-          <ha-icon
-            class="chevron ${isCollapsed ? "collapsed" : ""}"
-            icon="mdi:chevron-down"
-          ></ha-icon>
-        </div>
-        ${
-          isCollapsed
-            ? nothing
-            : html`
-                <div class="block-body mold-body">
-                  <div class="toggle-row">
-                    <div class="toggle-text">
-                      <span class="toggle-label">
-                        <ha-icon icon="mdi:shield-check"></ha-icon>
-                        ${localize("mold.room_heating_title", lang)}
-                      </span>
-                      <span class="toggle-hint">${localize("mold.room_heating_hint", lang)}</span>
-                    </div>
-                    <ha-switch
-                      .checked=${this.moldPreventionHeating}
-                      @change=${(e: Event) =>
-                        this._fireSensorChanged(
-                          "mold_prevention_heating",
-                          (e.target as HTMLInputElement).checked,
-                        )}
-                    ></ha-switch>
-                  </div>
-                  <div class="toggle-row">
-                    <div class="toggle-text">
-                      <span class="toggle-label">
-                        <ha-icon icon="mdi:air-humidifier"></ha-icon>
-                        ${localize("dehumidifier.enabled", lang)}
-                      </span>
-                      <span class="toggle-hint"
-                        >${localize(dehumidifierReady ? "dehumidifier.hint" : "dehumidifier.requires", lang)}</span
-                      >
-                    </div>
-                    <ha-switch
-                      .checked=${this.dehumidifierEnabled}
-                      .disabled=${!dehumidifierReady}
-                      @change=${(e: Event) =>
-                        this._fireSensorChanged(
-                          "dehumidifier_enabled",
-                          (e.target as HTMLInputElement).checked,
-                        )}
-                    ></ha-switch>
-                  </div>
-                  ${
-                    this.dehumidifierEnabled
-                      ? html`
-                          <div class="threshold-grid">
-                            <div class="threshold-field">
-                              <ha-textfield
-                                type="number"
-                                step="1"
-                                min="1"
-                                max=${this.dehumidifierUpper - 1}
-                                suffix="%"
-                                .label=${localize("dehumidifier.lower", lang)}
-                                .value=${String(this.dehumidifierLower)}
-                                @change=${(e: Event) => this._onDehumidifierBoundChange(e, true)}
-                              ></ha-textfield>
-                              <span class="field-hint"
-                                >${localize("dehumidifier.lower_hint", lang)}</span
-                              >
-                            </div>
-                            <div class="threshold-field">
-                              <ha-textfield
-                                type="number"
-                                step="1"
-                                min=${this.dehumidifierLower + 1}
-                                max="100"
-                                suffix="%"
-                                .label=${localize("dehumidifier.upper", lang)}
-                                .value=${String(this.dehumidifierUpper)}
-                                @change=${(e: Event) => this._onDehumidifierBoundChange(e, false)}
-                              ></ha-textfield>
-                              <span class="field-hint"
-                                >${localize("dehumidifier.upper_hint", lang)}</span
-                              >
-                            </div>
-                          </div>
-                        `
-                      : nothing
-                  }
-                </div>
-              `
-        }
-      </div>
-    `;
-  }
-
-  private _onDehumidifierBoundChange(e: Event, lower: boolean) {
-    const v = parseInt((e.target as HTMLInputElement).value, 10);
-    const ok = lower
-      ? v >= 1 && v < this.dehumidifierUpper
-      : v > this.dehumidifierLower && v <= 100;
-    if (!isNaN(v) && ok) {
-      this._fireSensorChanged(lower ? "dehumidifier_lower_bound" : "dehumidifier_upper_bound", v);
-    }
   }
 
   private _renderGlobalAdd(lang: string) {
@@ -940,7 +791,7 @@ export class RsSensorSection extends LitElement {
     `;
   }
 
-  private _toggleBlock(kind: BlockKind) {
+  private _toggleBlock(kind: SensorKind) {
     const currentlyCollapsed = this._collapsed[kind] ?? true;
     this._collapsed = { ...this._collapsed, [kind]: !currentlyCollapsed };
   }

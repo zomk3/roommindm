@@ -5,7 +5,7 @@ import { html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { RsSettingsBase } from "./rs-settings-base";
 import type { HomeAssistant } from "../../types";
-import { localize } from "../../utils/localize";
+import { localize, type TranslationKey } from "../../utils/localize";
 import { getSelectValue } from "../../utils/events";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
 
@@ -23,6 +23,14 @@ export class RsSettingsMold extends RsSettingsBase {
   @property({ type: Number }) public moldHumidityThreshold = 70;
   @property({ type: Number }) public moldFRsi = 0.8;
   @property({ type: Number }) public moldSustainedMinutes = 30;
+  @property({ type: Number }) public dehumidifierDelayMinutes = 10;
+  @property({ type: Number }) public dehumidifierMinOnMinutes = 10;
+  @property({ type: Number }) public dehumidifierMinOffMinutes = 5;
+  @property({ type: Boolean }) public dehumidifierQuietEnabled = false;
+  @property({ type: String }) public dehumidifierQuietStart = "22:00";
+  @property({ type: String }) public dehumidifierQuietEnd = "07:00";
+  @property({ type: Boolean }) public dehumidifierVentilationNotify = true;
+  @property({ type: Boolean }) public dehumidifierPreferVentilation = false;
   @property({ type: Boolean }) public moldPreventionEnabled = false;
   @property({ type: String }) public moldPreventionIntensity: "light" | "medium" | "strong" =
     "medium";
@@ -176,6 +184,74 @@ export class RsSettingsMold extends RsSettingsBase {
         }
       </div>
 
+      <!-- Dehumidifier section (rooms enable their dehumidifier in the room settings) -->
+      <div class="settings-section">
+        <div class="toggle-text">
+          <span class="toggle-label">
+            <ha-icon icon="mdi:air-humidifier"></ha-icon>
+            ${localize("mold.dehumidifier", l)}
+          </span>
+          <span class="toggle-hint">${localize("mold.dehumidifier_desc", l)}</span>
+        </div>
+        <div class="threshold-grid three" style="margin-top: 12px">
+          ${this._minutesField("dehumidifierDelayMinutes", this.dehumidifierDelayMinutes, "mold.dehumidifier_delay", 120)}
+          ${this._minutesField("dehumidifierMinOnMinutes", this.dehumidifierMinOnMinutes, "mold.dehumidifier_min_on", 60)}
+          ${this._minutesField("dehumidifierMinOffMinutes", this.dehumidifierMinOffMinutes, "mold.dehumidifier_min_off", 60)}
+        </div>
+        <div class="toggle-row" style="margin-top: 16px">
+          <div class="toggle-text">
+            <span class="toggle-label">
+              <ha-icon icon="mdi:sleep"></ha-icon>
+              ${localize("mold.dehumidifier_quiet", l)}
+            </span>
+            <span class="toggle-hint">${localize("mold.dehumidifier_quiet_desc", l)}</span>
+          </div>
+          <ha-switch
+            .checked=${this.dehumidifierQuietEnabled}
+            @change=${(e: Event) =>
+              this._fire("dehumidifierQuietEnabled", (e.target as HTMLInputElement).checked)}
+          ></ha-switch>
+        </div>
+        ${
+          this.dehumidifierQuietEnabled
+            ? html`
+                <div class="threshold-grid" style="margin-top: 12px">
+                  ${this._timeField("dehumidifierQuietStart", this.dehumidifierQuietStart, "mold.dehumidifier_quiet_start")}
+                  ${this._timeField("dehumidifierQuietEnd", this.dehumidifierQuietEnd, "mold.dehumidifier_quiet_end")}
+                </div>
+              `
+            : nothing
+        }
+        <div class="toggle-row" style="margin-top: 16px">
+          <div class="toggle-text">
+            <span class="toggle-label">
+              <ha-icon icon="mdi:window-open-variant"></ha-icon>
+              ${localize("mold.ventilation_notify", l)}
+            </span>
+            <span class="toggle-hint">${localize("mold.ventilation_notify_desc", l)}</span>
+          </div>
+          <ha-switch
+            .checked=${this.dehumidifierVentilationNotify}
+            @change=${(e: Event) =>
+              this._fire("dehumidifierVentilationNotify", (e.target as HTMLInputElement).checked)}
+          ></ha-switch>
+        </div>
+        <div class="toggle-row" style="margin-top: 16px">
+          <div class="toggle-text">
+            <span class="toggle-label">
+              <ha-icon icon="mdi:weather-windy"></ha-icon>
+              ${localize("mold.prefer_ventilation", l)}
+            </span>
+            <span class="toggle-hint">${localize("mold.prefer_ventilation_desc", l)}</span>
+          </div>
+          <ha-switch
+            .checked=${this.dehumidifierPreferVentilation}
+            @change=${(e: Event) =>
+              this._fire("dehumidifierPreferVentilation", (e.target as HTMLInputElement).checked)}
+          ></ha-switch>
+        </div>
+      </div>
+
       ${
         this.moldDetectionEnabled || this.moldPreventionEnabled
           ? html`
@@ -209,6 +285,44 @@ export class RsSettingsMold extends RsSettingsBase {
             `
           : nothing
       }
+    `;
+  }
+
+  private _minutesField(key: string, value: number, label: TranslationKey, max: number) {
+    const l = this.hass.language;
+    return html`
+      <div class="threshold-field">
+        <ha-textfield
+          .value=${String(value)}
+          .label=${localize(label, l)}
+          .suffix=${"min"}
+          type="number"
+          step="1"
+          min="0"
+          max=${max}
+          @change=${(e: Event) => {
+            const v = parseInt((e.target as HTMLInputElement).value, 10);
+            if (!isNaN(v) && v >= 0 && v <= max) this._fire(key, v);
+          }}
+        ></ha-textfield>
+        <span class="field-hint">${localize(`${label}_hint` as TranslationKey, l)}</span>
+      </div>
+    `;
+  }
+
+  private _timeField(key: string, value: string, label: TranslationKey) {
+    return html`
+      <div class="threshold-field">
+        <ha-textfield
+          .value=${value}
+          .label=${localize(label, this.hass.language)}
+          type="time"
+          @change=${(e: Event) => {
+            const v = (e.target as HTMLInputElement).value;
+            if (/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) this._fire(key, v);
+          }}
+        ></ha-textfield>
+      </div>
     `;
   }
 

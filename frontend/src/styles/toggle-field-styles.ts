@@ -41,6 +41,9 @@ export const toggleFieldStyles = css`
     grid-template-columns: 1fr 1fr;
     gap: 16px;
   }
+  .threshold-grid.three {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
   .threshold-field {
     display: flex;
     flex-direction: column;
@@ -55,7 +58,8 @@ export const toggleFieldStyles = css`
   }
 
   @media (max-width: 600px) {
-    .threshold-grid {
+    .threshold-grid,
+    .threshold-grid.three {
       grid-template-columns: 1fr;
     }
   }

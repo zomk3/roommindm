@@ -3285,3 +3285,17 @@ def test_setback_auto_off_schema_has_no_default():
     assert on["setback_auto_off"] is True
     with pytest.raises(vol.Invalid):
         _validate({"entity_id": "climate.ac", "type": "ac", "setback_auto_off": "yes"})
+
+
+def test_dehumidifier_delay_setting_schema():
+    import voluptuous as vol
+
+    from custom_components.roommind.websocket_api import websocket_save_settings
+
+    schema = websocket_save_settings._ws_schema
+    base = {"type": "roommind/settings/save", "id": 1}
+    assert schema({**base, "dehumidifier_delay_minutes": "10"})["dehumidifier_delay_minutes"] == 10
+    assert schema({**base, "dehumidifier_delay_minutes": 0})["dehumidifier_delay_minutes"] == 0
+    for bad in (-1, 121):
+        with pytest.raises(vol.Invalid):
+            schema({**base, "dehumidifier_delay_minutes": bad})

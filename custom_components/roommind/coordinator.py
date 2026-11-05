@@ -26,7 +26,6 @@ from .const import (
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
-    DEFAULT_MOLD_F_RSI,
     DEFAULT_OUTDOOR_HEATING_MAX,
     DOMAIN,
     HEATING_BOOST_TARGET,
@@ -675,15 +674,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
 
         current_temp, current_temp_raw, current_humidity, has_external_sensor = self._read_room_sensors(room, area_id)
 
-        await self._dehumidifier_manager.evaluate(
-            room,
-            current_temp,
-            current_humidity,
-            self.outdoor_temp_effective,
-            f_rsi=settings.get("mold_f_rsi", DEFAULT_MOLD_F_RSI),
-            control_active=settings.get("climate_control_active", True) and room.get("climate_control_enabled", True),
-        )
-
         # --- Outdoor room: skip all control logic ---
         if room.get("is_outdoor", False):
             await self._async_release_valves(area_id, room.get("devices", []))
@@ -716,6 +706,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "mold_surface_temp": None,
                 "mold_prevention_active": False,
                 "mold_prevention_delta": 0,
+                "dehumidifier_active": False,
+                "dehumidifier_status": "off",
+                "ventilation_recommended": False,
                 "shading_factor": 1.0,
                 "n_observations": 0,
                 "blind_position": None,
@@ -748,9 +741,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             area_id,
             current_temp,
             current_humidity,
-            # Mold-prevention heat needs the global switch and the room's own (default on);
-            # the room's dehumidifier is independent of both
-            settings if room.get("mold_prevention_heating", True) else {**settings, "mold_prevention_enabled": False},
+            # Mold-prevention heat needs the global switch and the room's own (default on), or
+            # steps in while the room's dehumidifier cannot work (unreachable, tank full)
+            settings
+            if room.get("mold_prevention_heating", True) or self._dehumidifier_manager.needs_heat_fallback(room)
+            else {**settings, "mold_prevention_enabled": False},
         )
 
         # Load schedule blocks once — used for both target temp resolution and MPC lookahead.
@@ -938,6 +933,18 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if window_open or window_pending:
             mode = MODE_IDLE
             power_fraction = 0.0
+
+        await self._dehumidifier_manager.evaluate(
+            room,
+            current_temp,
+            current_humidity,
+            self.outdoor_temp_effective,
+            settings,
+            control_active=settings.get("climate_control_active", True) and room.get("climate_control_enabled", True),
+            window_open=bool(window_open),
+            outdoor_humidity=self.outdoor_humidity,
+            area_name=_get_area_name(self.hass, area_id),
+        )
 
         climate_active = settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)
         # Startup guard: Full Control room without any temperature reading yet —
@@ -1674,6 +1681,9 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "mold_surface_temp": (round(mold_surface_temp, 1) if mold_surface_temp is not None else None),
             "mold_prevention_active": mold_prevention_active_room,
             "mold_prevention_delta": mold_prevention_temp_delta,
+            "dehumidifier_active": self._dehumidifier_manager.is_running(area_id),
+            "dehumidifier_lower_bound": room.get("dehumidifier_lower_bound", 50),
+            **self._dehumidifier_state(area_id),
             "shading_factor": shading_factor,
             "q_occupancy": q_occupancy,
             "n_observations": self._model_manager.get_n_observations(area_id),
@@ -2341,6 +2351,19 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             await self.hass.data[DOMAIN]["store"].async_update_room(area_id, {REST_SWITCHED_OFF: value})
         except KeyError:
             pass  # deleted in the settings panel meanwhile
+
+    def _dehumidifier_state(self, area_id: str) -> dict:
+        """The room's dehumidifier status, airing recommendation and today's usage for the panel."""
+        manager = self._dehumidifier_manager
+        stats = manager.stats(area_id)
+        ventilation = manager.ventilation(area_id)
+        return {
+            "dehumidifier_status": manager.status(area_id),
+            "dehumidifier_runtime_today": round(stats.runtime_s / 60),
+            "ventilation_recommended": ventilation is not None,
+            "ventilation_indoor_ah": ventilation[0] if ventilation else None,
+            "ventilation_outdoor_ah": ventilation[1] if ventilation else None,
+        }
 
     def _forget_room(self, area_id: str) -> None:
         """Drop a room's entities and in-memory run state."""

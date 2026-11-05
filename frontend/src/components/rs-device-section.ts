@@ -29,6 +29,7 @@ export class RsDeviceSection extends LitElement {
   @property({ attribute: false }) public devices: DeviceConfig[] = [];
   @property({ type: String }) public selectedTempSensor = "";
   @property({ type: String }) public dehumidifierEntity = "";
+  @property({ type: String }) public dehumidifierTankSensor = "";
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: Boolean }) public coilDryEnabledGlobal = false;
@@ -225,6 +226,17 @@ export class RsDeviceSection extends LitElement {
         padding: 8px 14px 4px;
       }
 
+      .tank-picker {
+        display: block;
+        margin-top: 12px;
+      }
+
+      .picker-hint {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-top: 4px;
+      }
+
       .boost-hint {
         display: flex;
         align-items: flex-start;
@@ -380,6 +392,11 @@ export class RsDeviceSection extends LitElement {
                   ${localize("dehumidifier.title", this.hass.language)}
                 </div>
                 ${this._renderViewRow(this.dehumidifierEntity, "dehumidifier")}
+                ${
+                  this.dehumidifierTankSensor
+                    ? this._renderViewRow(this.dehumidifierTankSensor, "tank")
+                    : nothing
+                }
               </div>
             `
           : nothing
@@ -425,7 +442,23 @@ export class RsDeviceSection extends LitElement {
     );
   }
 
-  private _renderViewRow(entityId: string, type: "climate" | "temp" | "humidity" | "dehumidifier") {
+  private _onTankSensorPicked(e: CustomEvent<{ value?: string }>) {
+    e.stopPropagation();
+    const value = e.detail.value ?? "";
+    if (value === this.dehumidifierTankSensor) return;
+    this.dispatchEvent(
+      new CustomEvent("dehumidifier-changed", {
+        detail: { key: "dehumidifier_tank_sensor", value },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private _renderViewRow(
+    entityId: string,
+    type: "climate" | "temp" | "humidity" | "dehumidifier" | "tank",
+  ) {
     const entityState = this.hass.states[entityId];
     const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
     const state = entityState?.state;
@@ -434,6 +467,13 @@ export class RsDeviceSection extends LitElement {
     let displayValue = "";
     if (type === "dehumidifier") {
       displayValue = state ?? "";
+    } else if (type === "tank") {
+      displayValue =
+        state === "on"
+          ? localize("dehumidifier.tank_full", this.hass.language)
+          : state === "off"
+            ? localize("dehumidifier.tank_ok", this.hass.language)
+            : (state ?? "");
     } else if (type === "climate") {
       const ct = attrs.current_temperature as number | undefined;
       if (ct != null) displayValue = `${ct.toFixed(1)}${tempUnit(this.hass)}`;
@@ -580,6 +620,23 @@ export class RsDeviceSection extends LitElement {
           label=${localize("dehumidifier.entity", this.hass.language)}
           @value-changed=${this._onDehumidifierPicked}
         ></ha-entity-picker>
+        ${
+          this.dehumidifierEntity
+            ? html`
+                <ha-entity-picker
+                  class="tank-picker"
+                  .hass=${this.hass}
+                  .includeDomains=${["binary_sensor"]}
+                  .value=${this.dehumidifierTankSensor}
+                  label=${localize("dehumidifier.tank_sensor", this.hass.language)}
+                  @value-changed=${this._onTankSensorPicked}
+                ></ha-entity-picker>
+                <div class="picker-hint">
+                  ${localize("dehumidifier.tank_sensor_hint", this.hass.language)}
+                </div>
+              `
+            : nothing
+        }
       </div>
 
       ${

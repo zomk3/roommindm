@@ -21,16 +21,30 @@ SETTINGS = {
     "mold_prevention_enabled": True,
     "mold_prevention_intensity": "medium",
     "outdoor_temp_sensor": "sensor.outdoor_temp",
+    "dehumidifier_delay_minutes": 0,  # these tests check what switches, not when
 }
 
 
-async def _run_cycle(hass, mock_config_entry, dryer_state: str, settings: dict | None = None, room: dict | None = None):
+async def _run_cycle(
+    hass,
+    mock_config_entry,
+    dryer_state: str,
+    settings: dict | None = None,
+    room: dict | None = None,
+    extra: dict | None = None,
+    window_sensors: dict | None = None,
+):
     store = _make_store_mock({AREA: room or ROOM})
     store.get_settings.return_value = settings or SETTINGS
     hass.data = {"roommind": {"store": store}}
     # 18 °C, 75 % RH, 0 °C outside: critical mold risk, humidity above the upper bound
     hass.states.get = MagicMock(
-        side_effect=make_mock_states_get(humidity="75.0", outdoor_temp="0.0", extra={DRYER: (dryer_state, {})})
+        side_effect=make_mock_states_get(
+            humidity="75.0",
+            outdoor_temp="0.0",
+            extra={DRYER: (dryer_state, {}), **(extra or {})},
+            window_sensors=window_sensors,
+        )
     )
     hass.services.async_call = AsyncMock()
     coordinator = _create_coordinator(hass, mock_config_entry)
@@ -113,3 +127,55 @@ async def test_room_prevention_heat_needs_the_global_switch(hass, mock_config_en
     )
     assert room["mold_prevention_active"] is False
     assert room["target_temp"] == 21.0
+
+
+@pytest.mark.asyncio
+async def test_room_state_reports_running_dehumidifier(hass, mock_config_entry):
+    room, _ = await _run_cycle(hass, mock_config_entry, "on")
+    assert room["dehumidifier_active"] is True
+    assert room["dehumidifier_lower_bound"] == 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("dryer_state", "room_extra"),
+    [("off", {}), ("on", {"dehumidifier_enabled": False}), ("on", {"climate_control_enabled": False})],
+)
+async def test_room_state_reports_no_dehumidifier_when_not_running_for_roommind(
+    hass, mock_config_entry, dryer_state, room_extra
+):
+    room, _ = await _run_cycle(hass, mock_config_entry, dryer_state, room={**ROOM, **room_extra})
+    assert room["dehumidifier_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_default_delay_holds_back_the_first_switch(hass, mock_config_entry):
+    settings = {k: v for k, v in SETTINGS.items() if k != "dehumidifier_delay_minutes"}
+    room, dryer_calls = await _run_cycle(hass, mock_config_entry, "off", settings=settings)
+    assert dryer_calls == []  # condition must hold 10 minutes first
+    assert room["mold_prevention_active"] is True  # prevention heat is not delayed by this
+
+
+@pytest.mark.asyncio
+async def test_full_tank_brings_prevention_heat_back_although_the_room_turned_it_off(hass, mock_config_entry):
+    room = {**ROOM, "mold_prevention_heating": False, "dehumidifier_tank_sensor": "binary_sensor.dryer_tank"}
+    with_tank, calls = await _run_cycle(
+        hass, mock_config_entry, "off", room=room, extra={"binary_sensor.dryer_tank": ("on", {})}
+    )
+    assert with_tank["mold_prevention_active"] is True  # fallback while the dehumidifier cannot work
+    assert with_tank["dehumidifier_status"] == "tank_full"
+    assert calls == []
+    emptied, calls = await _run_cycle(
+        hass, mock_config_entry, "off", room=room, extra={"binary_sensor.dryer_tank": ("off", {})}
+    )
+    assert emptied["mold_prevention_active"] is False
+    assert calls == [("switch", "turn_on", {"entity_id": DRYER})]
+
+
+@pytest.mark.asyncio
+async def test_open_window_keeps_the_dehumidifier_off(hass, mock_config_entry):
+    room = {**ROOM, "window_sensors": ["binary_sensor.living_window"]}
+    state, calls = await _run_cycle(
+        hass, mock_config_entry, "on", room=room, window_sensors={"binary_sensor.living_window": "on"}
+    )
+    assert calls == [("switch", "turn_off", {"entity_id": DRYER})]
