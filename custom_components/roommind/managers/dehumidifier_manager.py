@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import time as dt_time
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
@@ -359,7 +359,7 @@ class DehumidifierManager:
         self._pending.pop(area_id, None)
         await self._set_state(entity, active)
 
-    def _compressor_allows(self, state, active: bool, settings: dict) -> bool:
+    def _compressor_allows(self, state: State | None, active: bool, settings: dict) -> bool:
         """Minimum run before switching off, minimum pause before switching on.
 
         Measured from the device's last real state change, whoever caused it.
@@ -372,7 +372,8 @@ class DehumidifierManager:
             if active
             else ("dehumidifier_min_on_minutes", DEFAULT_DEHUMIDIFIER_MIN_ON_MINUTES)
         )
-        return (dt_util.utcnow() - changed).total_seconds() >= settings.get(key, default) * 60
+        minimum_s = float(settings.get(key, default)) * 60
+        return bool((dt_util.utcnow() - changed).total_seconds() >= minimum_s)
 
     # --- tank, airing, runtime ---------------------------------------------------
 
@@ -418,8 +419,15 @@ class DehumidifierManager:
         Only for rooms with a window sensor: a room without one may have no window to open,
         and RoomMind could not tell that the advice was followed.
         """
-        values = (temperature, outdoor_temp, outdoor_humidity)
-        if not has_window or window_open or not wants_drying or any(v is None or not math.isfinite(v) for v in values):
+        if (
+            not has_window
+            or window_open
+            or not wants_drying
+            or temperature is None
+            or outdoor_temp is None
+            or outdoor_humidity is None
+            or not all(math.isfinite(v) for v in (temperature, outdoor_temp, outdoor_humidity))
+        ):
             self._clear_ventilation(area_id)
             return
         indoor = absolute_humidity(temperature, humidity)
