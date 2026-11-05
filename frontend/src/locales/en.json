@@ -645,5 +645,8 @@
   "dehumidifier.tank_full": "Full",
   "dehumidifier.tank_ok": "OK",
   "common.on": "on",
-  "common.off": "off"
+  "common.off": "off",
+  "dehumidifier.device_target": "Target on the device",
+  "dehumidifier.device_target_hint": "Set on the device while RoomMind runs it, so its own humidistat does not stop it early. Empty = the device's lowest value, 0 = leave it alone",
+  "dehumidifier.device_target_keep": "leave unchanged"
 }

@@ -30,6 +30,7 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public selectedTempSensor = "";
   @property({ type: String }) public dehumidifierEntity = "";
   @property({ type: String }) public dehumidifierTankSensor = "";
+  @property({ attribute: false }) public dehumidifierDeviceTarget: number | null = null;
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: Boolean }) public coilDryEnabledGlobal = false;
@@ -397,6 +398,23 @@ export class RsDeviceSection extends LitElement {
                     ? this._renderViewRow(this.dehumidifierTankSensor, "tank")
                     : nothing
                 }
+                ${
+                  this.dehumidifierEntity.startsWith("humidifier.") &&
+                  this.dehumidifierDeviceTarget != null
+                    ? html`<div class="view-row">
+                        <span class="view-name"
+                          >${localize("dehumidifier.device_target", this.hass.language)}</span
+                        >
+                        <span class="view-value"
+                          >${
+                            this.dehumidifierDeviceTarget === 0
+                              ? localize("dehumidifier.device_target_keep", this.hass.language)
+                              : `${this.dehumidifierDeviceTarget}%`
+                          }</span
+                        >
+                      </div>`
+                    : nothing
+                }
               </div>
             `
           : nothing
@@ -436,6 +454,20 @@ export class RsDeviceSection extends LitElement {
     this.dispatchEvent(
       new CustomEvent("dehumidifier-changed", {
         detail: { key: "dehumidifier_entity", value },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** Empty = the device's minimum, 0 = leave the device's target alone. */
+  private _onDeviceTargetChange(e: Event) {
+    const raw = (e.target as HTMLInputElement).value.trim();
+    const value = raw === "" ? "" : parseInt(raw, 10);
+    if (value !== "" && (isNaN(value) || value < 0 || value > 100)) return;
+    this.dispatchEvent(
+      new CustomEvent("dehumidifier-changed", {
+        detail: { key: "dehumidifier_device_target", value },
         bubbles: true,
         composed: true,
       }),
@@ -634,6 +666,26 @@ export class RsDeviceSection extends LitElement {
                 <div class="picker-hint">
                   ${localize("dehumidifier.tank_sensor_hint", this.hass.language)}
                 </div>
+                ${
+                  this.dehumidifierEntity.startsWith("humidifier.")
+                    ? html`
+                        <ha-textfield
+                          class="tank-picker"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          suffix="%"
+                          .label=${localize("dehumidifier.device_target", this.hass.language)}
+                          .value=${this.dehumidifierDeviceTarget == null ? "" : String(this.dehumidifierDeviceTarget)}
+                          @change=${this._onDeviceTargetChange}
+                        ></ha-textfield>
+                        <div class="picker-hint">
+                          ${localize("dehumidifier.device_target_hint", this.hass.language)}
+                        </div>
+                      `
+                    : nothing
+                }
               `
             : nothing
         }

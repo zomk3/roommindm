@@ -125,10 +125,12 @@ The dehumidifier is a `humidifier` entity or the `switch` of its smart plug, cho
 room's **Devices** section. RoomMind switches it on at the upper bound or when the surface-humidity
 estimate shows mold risk, and off at the lower bound; inside the band it leaves the device as it is,
 so it runs for long stretches instead of cycling. When RoomMind switches a `humidifier` entity on it
-lowers the device's own target to its minimum, so the built-in humidistat (often a poor sensor next to
-the unit) does not stop it before the room reaches the lower bound. This is tried once per run: some
-devices put their own target back (e.g. in an "auto" mode) and are not sent the same command every
-cycle.
+lowers the device's own target, so the built-in humidistat (often a poor sensor next to the unit) does
+not stop it before the room reaches the lower bound. **Target on the device** under **Devices** sets the
+value: empty uses the lowest value the device reports, but some devices report a lower one than they
+accept, so enter the real limit there (e.g. 30); 0 leaves the device's target alone. The target is
+never raised, and it is set once per run: some devices put their own target back (e.g. in an "auto"
+mode) and are not sent the same command every cycle.
 
 Global dehumidifier settings (Settings → Mold protection → Dehumidifiers):
 

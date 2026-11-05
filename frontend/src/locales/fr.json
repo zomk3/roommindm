@@ -645,5 +645,8 @@
   "dehumidifier.tank_full": "Plein",
   "dehumidifier.tank_ok": "OK",
   "common.on": "activé",
-  "common.off": "désactivé"
+  "common.off": "désactivé",
+  "dehumidifier.device_target": "Consigne sur l’appareil",
+  "dehumidifier.device_target_hint": "Appliquée à l’appareil pendant que RoomMind le fait tourner, pour que sa propre régulation ne l’arrête pas trop tôt. Vide = valeur la plus basse de l’appareil, 0 = ne pas modifier",
+  "dehumidifier.device_target_keep": "ne pas modifier"
 }

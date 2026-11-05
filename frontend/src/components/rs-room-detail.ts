@@ -64,6 +64,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _dehumidifierUpper = 60;
   @state() private _moldPreventionHeating = true;
   @state() private _dehumidifierTankSensor = "";
+  @state() private _dehumidifierDeviceTarget: number | null = null;
   @state() private _selectedOccupancySensors: Set<string> = new Set();
   @state() private _occupancyEcoEnabled = false;
   @state() private _preheatEnabled = true;
@@ -279,6 +280,7 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierUpper = this.config.dehumidifier_upper_bound ?? 60;
       this._moldPreventionHeating = this.config.mold_prevention_heating ?? true;
       this._dehumidifierTankSensor = this.config.dehumidifier_tank_sensor ?? "";
+      this._dehumidifierDeviceTarget = this.config.dehumidifier_device_target ?? null;
       this._selectedOccupancySensors = new Set(this.config.occupancy_sensors ?? []);
       this._occupancyEcoEnabled = this.config.occupancy_eco_enabled ?? false;
       this._preheatEnabled = this.config.preheat_enabled ?? true;
@@ -328,6 +330,7 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierUpper = 60;
       this._moldPreventionHeating = true;
       this._dehumidifierTankSensor = "";
+      this._dehumidifierDeviceTarget = null;
       this._selectedOccupancySensors = new Set();
       this._occupancyEcoEnabled = false;
       this._preheatEnabled = true;
@@ -534,6 +537,7 @@ export class RsRoomDetail extends LitElement {
                       .dehumidifierEntity=${this._dehumidifierEntity}
                       @dehumidifier-changed=${this._onSensorChanged}
                       .dehumidifierTankSensor=${this._dehumidifierTankSensor}
+                      .dehumidifierDeviceTarget=${this._dehumidifierDeviceTarget}
                       .valveProtectionExclude=${this._valveProtectionExclude}
                       .valveProtectionEnabled=${this.valveProtectionEnabled}
                       .coilDryEnabledGlobal=${this.coilDryEnabled}
@@ -811,6 +815,7 @@ export class RsRoomDetail extends LitElement {
             .dehumidifierEntity=${this._dehumidifierEntity}
             @dehumidifier-changed=${this._onSensorChanged}
             .dehumidifierTankSensor=${this._dehumidifierTankSensor}
+            .dehumidifierDeviceTarget=${this._dehumidifierDeviceTarget}
             .valveProtectionExclude=${this._valveProtectionExclude}
             .valveProtectionEnabled=${this.valveProtectionEnabled}
             .coilDryEnabledGlobal=${this.coilDryEnabled}
@@ -1065,6 +1070,7 @@ export class RsRoomDetail extends LitElement {
       if (!value) {
         this._dehumidifierEnabled = false;
         this._dehumidifierTankSensor = "";
+        this._dehumidifierDeviceTarget = null;
       }
       // Suggest the device's own tank sensor
       if (value && !this._dehumidifierTankSensor) {
@@ -1085,6 +1091,8 @@ export class RsRoomDetail extends LitElement {
       this._moldPreventionHeating = value as boolean;
     } else if (key === "dehumidifier_tank_sensor") {
       this._dehumidifierTankSensor = value as string;
+    } else if (key === "dehumidifier_device_target") {
+      this._dehumidifierDeviceTarget = value === "" ? null : (value as number);
     } else if (key === "occupancy_sensors") {
       this._selectedOccupancySensors = new Set(value as string[]);
     } else if (key === "occupancy_eco_enabled") {
@@ -1239,6 +1247,7 @@ export class RsRoomDetail extends LitElement {
         dehumidifier_upper_bound: this._dehumidifierUpper,
         mold_prevention_heating: this._moldPreventionHeating,
         dehumidifier_tank_sensor: this._dehumidifierTankSensor,
+        dehumidifier_device_target: this._dehumidifierDeviceTarget,
         occupancy_sensors: [...this._selectedOccupancySensors],
         occupancy_eco_enabled: this._occupancyEcoEnabled,
         occupancy_eco_delay: this._occupancyEcoDelay,

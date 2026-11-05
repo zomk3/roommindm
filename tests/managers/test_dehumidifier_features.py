@@ -383,3 +383,20 @@ async def test_device_target_is_lowered_once_per_run_even_if_the_device_puts_it_
     states[eid] = ("on", {"humidity": 50, "min_humidity": 25})
     await manager.evaluate(_room(eid), 22, 55, 15, IMMEDIATE)
     assert _calls(hass).count(("humidifier", "set_humidity", {"entity_id": eid, "humidity": 25})) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("device_target", "expected"),
+    [
+        (None, [("humidifier", "set_humidity", {"entity_id": "humidifier.dryer", "humidity": 25})]),  # minimum
+        (30, [("humidifier", "set_humidity", {"entity_id": "humidifier.dryer", "humidity": 30})]),  # room setting
+        (0, []),  # leave the device's own target alone
+        (55, []),  # never raised: the device is already lower
+    ],
+)
+async def test_device_target_follows_the_room_setting(device_target, expected):
+    eid = "humidifier.dryer"
+    manager, hass = _manager({eid: ("on", {"humidity": 50, "min_humidity": 25})})
+    await manager.evaluate(_room(eid, dehumidifier_device_target=device_target), 22, 55, 15, IMMEDIATE)
+    assert _calls(hass) == expected

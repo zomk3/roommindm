@@ -137,6 +137,7 @@ export interface RoomConfig {
   dehumidifier_upper_bound?: number;
   mold_prevention_heating?: boolean;
   dehumidifier_tank_sensor?: string;
+  dehumidifier_device_target?: number | null;
   occupancy_sensors?: string[];
   occupancy_eco_enabled?: boolean;
   occupancy_eco_delay?: number;

@@ -140,13 +140,17 @@ class DehumidifierManager:
             return False
         return True
 
-    async def _ensure_min_target(self, entity_id: str) -> None:
-        """Keep a humidifier entity's own target at its minimum while RoomMind runs it.
+    async def _ensure_min_target(self, entity_id: str, device_target: float | None = None) -> None:
+        """Keep a humidifier entity's own target low while RoomMind runs it.
 
         Its built-in humidistat (often a poor sensor next to the unit) would otherwise
-        switch it off before the room reaches RoomMind's lower bound. Tried once per run:
-        a device that puts its target back is not sent the same command every cycle.
+        switch it off before the room reaches RoomMind's lower bound. *device_target* is the
+        room's setting: None = the device's reported minimum (some report a lower one than
+        they accept), 0 = leave the device's target alone. Tried once per run: a device that
+        puts its target back is not sent the same command every cycle.
         """
+        if device_target == 0:
+            return
         if not entity_id.startswith("humidifier."):
             return
         state = self.hass.states.get(entity_id)
@@ -155,16 +159,17 @@ class DehumidifierManager:
             return
         if entity_id in self._target_lowered:
             return  # once per run: some devices put their own target back (e.g. in auto mode)
-        target, minimum = state.attributes.get("humidity"), state.attributes.get("min_humidity")
-        if not isinstance(target, (int, float)) or not isinstance(minimum, (int, float)) or target <= minimum:
-            return
+        target = state.attributes.get("humidity")
+        wanted = device_target if device_target is not None else state.attributes.get("min_humidity")
+        if not isinstance(target, (int, float)) or not isinstance(wanted, (int, float)) or target <= wanted:
+            return  # unknown, or already at or below the wanted target (never raised)
         self._target_lowered.add(entity_id)
         try:
             await self.hass.services.async_call(
-                "humidifier", "set_humidity", {"entity_id": entity_id, "humidity": minimum}, blocking=True
+                "humidifier", "set_humidity", {"entity_id": entity_id, "humidity": wanted}, blocking=True
             )
         except HomeAssistantError:
-            _LOGGER.warning("Could not set the target humidity of %s to its minimum", entity_id)
+            _LOGGER.warning("Could not set the target humidity of %s to %s", entity_id, wanted)
 
     # --- read-only state for the room view ------------------------------------------
 
@@ -362,7 +367,7 @@ class DehumidifierManager:
             self._pending.pop(area_id, None)  # inside the band: the condition was interrupted
         else:
             await self._switch_after_delay(area_id, entity, desired, settings, use_delay=use_delay)
-        await self._ensure_min_target(entity)
+        await self._ensure_min_target(entity, room.get("dehumidifier_device_target"))
 
     async def _switch_after_delay(
         self, area_id: str, entity: str, active: bool, settings: dict, *, use_delay: bool = True

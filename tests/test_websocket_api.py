@@ -3237,6 +3237,18 @@ async def test_save_room_mold_prevention_heating_roundtrip(ws_hass, store, conne
     assert store.get_room("office")["mold_prevention_heating"] is True
 
 
+def test_dehumidifier_device_target_schema():
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "office"}
+    assert schema({**base, "dehumidifier_device_target": "30"})["dehumidifier_device_target"] == 30
+    assert schema({**base, "dehumidifier_device_target": None})["dehumidifier_device_target"] is None
+    assert schema({**base, "dehumidifier_device_target": 0})["dehumidifier_device_target"] == 0
+    with pytest.raises(vol.Invalid):
+        schema({**base, "dehumidifier_device_target": 101})
+
+
 def test_mold_prevention_heating_schema_is_bool():
     import voluptuous as vol
 

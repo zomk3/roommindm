@@ -254,6 +254,7 @@ class RoomMindStore:
             "dehumidifier_upper_bound": config.get("dehumidifier_upper_bound", 60),
             "mold_prevention_heating": config.get("mold_prevention_heating", True),
             "dehumidifier_tank_sensor": config.get("dehumidifier_tank_sensor", ""),
+            "dehumidifier_device_target": config.get("dehumidifier_device_target"),
             "occupancy_sensors": config.get("occupancy_sensors", []),
             "occupancy_eco_enabled": config.get("occupancy_eco_enabled", False),
             "occupancy_eco_delay": config.get("occupancy_eco_delay", DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES),
