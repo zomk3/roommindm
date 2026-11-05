@@ -130,6 +130,9 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
+          # Topics and issues are repository settings HACS needs for its default store only.
+          # Forks have issues off and no topics; they are installed as custom repositories.
+          ignore: ${{ github.repository != 'snazzybean/roommind' && 'topics issues' || '' }}
 
   hassfest:
     name: Hassfest
