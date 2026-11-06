@@ -9,6 +9,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
 import { toggleFieldStyles } from "../styles/toggle-field-styles";
+import "./shared/rs-toggle-row";
 
 @customElement("rs-mold-protection")
 export class RsMoldProtection extends LitElement {
@@ -95,37 +96,25 @@ export class RsMoldProtection extends LitElement {
     const dehumidifierReady = !!this.dehumidifierEntity && !!this.humiditySensor;
     return html`
       <div class="edit-body">
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon icon="mdi:shield-check"></ha-icon>
-              ${localize("mold.room_heating_title", l)}
-            </span>
-            <span class="toggle-hint">${localize("mold.room_heating_hint", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.moldPreventionHeating}
-            @change=${(e: Event) =>
-              this._fire("mold_prevention_heating", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon icon="mdi:air-humidifier"></ha-icon>
-              ${localize("dehumidifier.enabled", l)}
-            </span>
-            <span class="toggle-hint"
-              >${localize(dehumidifierReady ? "dehumidifier.hint" : "dehumidifier.requires", l)}</span
-            >
-          </div>
-          <ha-switch
-            .checked=${this.dehumidifierEnabled}
-            .disabled=${!dehumidifierReady}
-            @change=${(e: Event) =>
-              this._fire("dehumidifier_enabled", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
+        <rs-toggle-row
+          .label=${localize("mold.room_heating_title", l)}
+          .hint=${localize("mold.room_heating_hint", l)}
+          .checked=${this.moldPreventionHeating}
+          @toggle-changed=${(e: CustomEvent<boolean>) => {
+            e.stopPropagation();
+            this._fire("mold_prevention_heating", e.detail);
+          }}
+        ></rs-toggle-row>
+        <rs-toggle-row
+          .label=${localize("dehumidifier.enabled", l)}
+          .hint=${localize(dehumidifierReady ? "dehumidifier.hint" : "dehumidifier.requires", l)}
+          .checked=${this.dehumidifierEnabled}
+          .disabled=${!dehumidifierReady}
+          @toggle-changed=${(e: CustomEvent<boolean>) => {
+            e.stopPropagation();
+            this._fire("dehumidifier_enabled", e.detail);
+          }}
+        ></rs-toggle-row>
         ${
           this.dehumidifierEnabled
             ? html`
@@ -141,7 +130,6 @@ export class RsMoldProtection extends LitElement {
                       .value=${String(this.dehumidifierLower)}
                       @change=${(e: Event) => this._onBoundChange(e, true)}
                     ></ha-textfield>
-                    <span class="field-hint">${localize("dehumidifier.lower_hint", l)}</span>
                   </div>
                   <div class="threshold-field">
                     <ha-textfield
@@ -154,7 +142,6 @@ export class RsMoldProtection extends LitElement {
                       .value=${String(this.dehumidifierUpper)}
                       @change=${(e: Event) => this._onBoundChange(e, false)}
                     ></ha-textfield>
-                    <span class="field-hint">${localize("dehumidifier.upper_hint", l)}</span>
                   </div>
                 </div>
               `

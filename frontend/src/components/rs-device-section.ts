@@ -227,15 +227,13 @@ export class RsDeviceSection extends LitElement {
         padding: 8px 14px 4px;
       }
 
-      .tank-picker {
-        display: block;
+      .dehum-field {
         margin-top: 12px;
       }
 
-      .picker-hint {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-top: 4px;
+      .dehum-field ha-entity-picker {
+        flex: 1;
+        min-width: 0;
       }
 
       .boost-hint {
@@ -399,19 +397,12 @@ export class RsDeviceSection extends LitElement {
                     : nothing
                 }
                 ${
-                  this.dehumidifierEntity.startsWith("humidifier.") &&
-                  this.dehumidifierDeviceTarget != null
+                  this.dehumidifierEntity.startsWith("humidifier.")
                     ? html`<div class="view-row">
                         <span class="view-name"
                           >${localize("dehumidifier.device_target", this.hass.language)}</span
                         >
-                        <span class="view-value"
-                          >${
-                            this.dehumidifierDeviceTarget === 0
-                              ? localize("dehumidifier.device_target_keep", this.hass.language)
-                              : `${this.dehumidifierDeviceTarget}%`
-                          }</span
-                        >
+                        <span class="view-value">${this._deviceTargetLabel()}</span>
                       </div>`
                     : nothing
                 }
@@ -460,11 +451,34 @@ export class RsDeviceSection extends LitElement {
     );
   }
 
-  /** Empty = the device's minimum, 0 = leave the device's target alone. */
-  private _onDeviceTargetChange(e: Event) {
-    const raw = (e.target as HTMLInputElement).value.trim();
-    const value = raw === "" ? "" : parseInt(raw, 10);
-    if (value !== "" && (isNaN(value) || value < 0 || value > 100)) return;
+  /** The device's reported humidity range, used for "automatic" and to bound a fixed value. */
+  private _deviceHumidityRange(): { min: number; max: number } {
+    const attrs = this.hass.states[this.dehumidifierEntity]?.attributes ?? {};
+    const min = Number(attrs.min_humidity);
+    const max = Number(attrs.max_humidity);
+    return {
+      min: Number.isFinite(min) && min > 0 ? Math.round(min) : 1,
+      max: Number.isFinite(max) && max > 0 ? Math.round(max) : 100,
+    };
+  }
+
+  /** null = automatic (the device's minimum), 0 = leave unchanged, n = fixed value. */
+  private _deviceTargetMode(): "auto" | "fixed" | "keep" {
+    if (this.dehumidifierDeviceTarget == null) return "auto";
+    return this.dehumidifierDeviceTarget === 0 ? "keep" : "fixed";
+  }
+
+  private _deviceTargetLabel(): string {
+    const lang = this.hass.language;
+    const mode = this._deviceTargetMode();
+    if (mode === "keep") return localize("dehumidifier.device_target_keep", lang);
+    if (mode === "fixed") return `${this.dehumidifierDeviceTarget}%`;
+    return localize("dehumidifier.device_target_auto", lang, {
+      value: this._deviceHumidityRange().min,
+    });
+  }
+
+  private _emitDeviceTarget(value: number | "") {
     this.dispatchEvent(
       new CustomEvent("dehumidifier-changed", {
         detail: { key: "dehumidifier_device_target", value },
@@ -472,6 +486,70 @@ export class RsDeviceSection extends LitElement {
         composed: true,
       }),
     );
+  }
+
+  private _onDeviceTargetModeChange(mode: string) {
+    if (mode === this._deviceTargetMode()) return;
+    if (mode === "auto") this._emitDeviceTarget("");
+    else if (mode === "keep") this._emitDeviceTarget(0);
+    else if (mode === "fixed") this._emitDeviceTarget(this._deviceHumidityRange().min);
+  }
+
+  private _onDeviceTargetValueChange(e: Event) {
+    const v = parseInt((e.target as HTMLInputElement).value, 10);
+    const { min, max } = this._deviceHumidityRange();
+    if (!isNaN(v) && v >= min && v <= max) this._emitDeviceTarget(v);
+  }
+
+  private _renderDeviceTargetEdit() {
+    const lang = this.hass.language;
+    const mode = this._deviceTargetMode();
+    const { min, max } = this._deviceHumidityRange();
+    const autoLabel = localize("dehumidifier.device_target_auto", lang, { value: min });
+    return html`
+      <div class="detail-field with-info dehum-field">
+        <ha-select
+          .label=${localize("dehumidifier.device_target", lang)}
+          .value=${mode}
+          .options=${[
+            { value: "auto", label: autoLabel },
+            { value: "fixed", label: localize("dehumidifier.device_target_fixed", lang) },
+            { value: "keep", label: localize("dehumidifier.device_target_keep", lang) },
+          ]}
+          @selected=${(e: Event) => this._onDeviceTargetModeChange(getSelectValue(e))}
+          @closed=${(e: Event) => e.stopPropagation()}
+          fixedMenuPosition
+        >
+          <ha-list-item value="auto">${autoLabel}</ha-list-item>
+          <ha-list-item value="fixed"
+            >${localize("dehumidifier.device_target_fixed", lang)}</ha-list-item
+          >
+          <ha-list-item value="keep"
+            >${localize("dehumidifier.device_target_keep", lang)}</ha-list-item
+          >
+        </ha-select>
+        <rs-info-icon .text=${localize("dehumidifier.device_target_hint", lang)}></rs-info-icon>
+      </div>
+      ${
+        mode === "fixed"
+          ? html`<div class="detail-field with-info dehum-field">
+              <ha-textfield
+                type="number"
+                step="1"
+                .min=${String(min)}
+                .max=${String(max)}
+                suffix="%"
+                .label=${localize("dehumidifier.device_target_fixed", lang)}
+                .value=${String(this.dehumidifierDeviceTarget)}
+                @change=${this._onDeviceTargetValueChange}
+              ></ha-textfield>
+              <rs-info-icon
+                .text=${localize("dehumidifier.device_target_value", lang, { min, max })}
+              ></rs-info-icon>
+            </div>`
+          : nothing
+      }
+    `;
   }
 
   private _onTankSensorPicked(e: CustomEvent<{ value?: string }>) {
@@ -655,35 +733,21 @@ export class RsDeviceSection extends LitElement {
         ${
           this.dehumidifierEntity
             ? html`
-                <ha-entity-picker
-                  class="tank-picker"
-                  .hass=${this.hass}
-                  .includeDomains=${["binary_sensor"]}
-                  .value=${this.dehumidifierTankSensor}
-                  label=${localize("dehumidifier.tank_sensor", this.hass.language)}
-                  @value-changed=${this._onTankSensorPicked}
-                ></ha-entity-picker>
-                <div class="picker-hint">
-                  ${localize("dehumidifier.tank_sensor_hint", this.hass.language)}
+                <div class="detail-field with-info dehum-field">
+                  <ha-entity-picker
+                    .hass=${this.hass}
+                    .includeDomains=${["binary_sensor"]}
+                    .value=${this.dehumidifierTankSensor}
+                    label=${localize("dehumidifier.tank_sensor", this.hass.language)}
+                    @value-changed=${this._onTankSensorPicked}
+                  ></ha-entity-picker>
+                  <rs-info-icon
+                    .text=${localize("dehumidifier.tank_sensor_hint", this.hass.language)}
+                  ></rs-info-icon>
                 </div>
                 ${
                   this.dehumidifierEntity.startsWith("humidifier.")
-                    ? html`
-                        <ha-textfield
-                          class="tank-picker"
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="1"
-                          suffix="%"
-                          .label=${localize("dehumidifier.device_target", this.hass.language)}
-                          .value=${this.dehumidifierDeviceTarget == null ? "" : String(this.dehumidifierDeviceTarget)}
-                          @change=${this._onDeviceTargetChange}
-                        ></ha-textfield>
-                        <div class="picker-hint">
-                          ${localize("dehumidifier.device_target_hint", this.hass.language)}
-                        </div>
-                      `
+                    ? this._renderDeviceTargetEdit()
                     : nothing
                 }
               `
