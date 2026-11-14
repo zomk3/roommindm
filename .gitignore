@@ -227,3 +227,6 @@ docs/plans/
 # Worktrees
 .worktrees/
 
+
+# graphify knowledge graph (local)
+graphify-out/
