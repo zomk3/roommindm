@@ -50,8 +50,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      209 |        0 |    100% |           |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      350 |        9 |     97% |520-521, 525-526, 533-534, 654, 894-899 |
-| **TOTAL**                                                          | **8357** |  **224** | **97%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      355 |        9 |     97% |520-521, 525-526, 533-534, 654, 894-899 |
+| **TOTAL**                                                          | **8362** |  **224** | **97%** |           |
 
 
 ## Setup coverage badge
