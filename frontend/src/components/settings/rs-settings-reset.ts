@@ -99,6 +99,7 @@ export class RsSettingsReset extends RsSettingsBase {
       fireSaveStatus(this, "saving");
       await this.hass.callWS({ type: "roommind/thermal/reset", area_id: areaId });
       fireSaveStatus(this, "saved");
+      this._fireThermalReset(areaId);
     } catch {
       fireSaveStatus(this, "error");
     }
@@ -111,9 +112,21 @@ export class RsSettingsReset extends RsSettingsBase {
       fireSaveStatus(this, "saving");
       await this.hass.callWS({ type: "roommind/thermal/reset_all" });
       fireSaveStatus(this, "saved");
+      this._fireThermalReset(null);
     } catch {
       fireSaveStatus(this, "error");
     }
+  }
+
+  /** Notify parent so it can drop stale boost cooldown state (null = all rooms). */
+  private _fireThermalReset(areaId: string | null) {
+    this.dispatchEvent(
+      new CustomEvent("thermal-reset", {
+        detail: { area_id: areaId },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   static styles = [

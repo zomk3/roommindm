@@ -381,7 +381,11 @@ export class RsSettings extends LitElement {
         .heading=${localize("settings.reset_title", l)}
         .intro=${localize("settings.intro.reset", l)}
       >
-        <rs-settings-reset .hass=${this.hass} .rooms=${this.rooms}></rs-settings-reset>
+        <rs-settings-reset
+          .hass=${this.hass}
+          .rooms=${this.rooms}
+          @thermal-reset=${this._onThermalReset}
+        ></rs-settings-reset>
       </rs-settings-panel>
     `;
   }
@@ -389,6 +393,17 @@ export class RsSettings extends LitElement {
   private _onBoostApplied(e: CustomEvent<{ area_id: string; n_observations: number }>) {
     const { area_id, n_observations } = e.detail;
     this._boostAppliedAt = { ...this._boostAppliedAt, [area_id]: n_observations };
+  }
+
+  private _onThermalReset(e: CustomEvent<{ area_id: string | null }>) {
+    const { area_id } = e.detail;
+    if (area_id === null) {
+      this._boostAppliedAt = {};
+      return;
+    }
+    const next = { ...this._boostAppliedAt };
+    delete next[area_id];
+    this._boostAppliedAt = next;
   }
 
   private _onSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {

@@ -1294,6 +1294,34 @@ async def test_thermal_reset_room(ws_hass, store, connection):
 
 
 @pytest.mark.asyncio
+async def test_thermal_reset_room_clears_boost_cooldown(ws_hass, store, connection):
+    """Resetting one room drops its boost cooldown anchor but keeps others."""
+    await store.async_load()
+    await store.async_save_settings({"boost_applied_at": {"room_a": 500, "room_b": 300}})
+
+    _make_coordinator_with_model(ws_hass)
+
+    msg = {"id": 23, "type": "roommind/thermal/reset", "area_id": "room_a"}
+    await _thermal_reset(ws_hass, connection, msg)
+
+    assert store.get_settings()["boost_applied_at"] == {"room_b": 300}
+
+
+@pytest.mark.asyncio
+async def test_thermal_reset_all_clears_boost_cooldown(ws_hass, store, connection):
+    """Resetting all rooms drops every boost cooldown anchor."""
+    await store.async_load()
+    await store.async_save_settings({"boost_applied_at": {"room_a": 500, "room_b": 300}})
+
+    _make_coordinator_with_model(ws_hass)
+
+    msg = {"id": 24, "type": "roommind/thermal/reset_all"}
+    await _thermal_reset_all(ws_hass, connection, msg)
+
+    assert store.get_settings()["boost_applied_at"] == {}
+
+
+@pytest.mark.asyncio
 async def test_thermal_reset_all(ws_hass, store, connection):
     """Resetting all rooms clears all models and history."""
     await store.async_load()

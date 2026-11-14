@@ -1035,6 +1035,11 @@ async def websocket_thermal_reset(
     if coordinator and coordinator.history_store:
         await hass.async_add_executor_job(coordinator.history_store.remove_room, area_id)
 
+    # Clear boost cooldown anchor — observation count restarts at 0
+    boost_applied = dict(store.get_settings().get("boost_applied_at", {}))
+    if boost_applied.pop(area_id, None) is not None:
+        await store.async_save_settings({"boost_applied_at": boost_applied})
+
     connection.send_result(msg["id"], {"success": True})
 
 
@@ -1066,6 +1071,10 @@ async def websocket_thermal_reset_all(
     if coordinator and coordinator.history_store:
         for area_id in room_ids:
             await hass.async_add_executor_job(coordinator.history_store.remove_room, area_id)
+
+    # Clear all boost cooldown anchors
+    if store.get_settings().get("boost_applied_at"):
+        await store.async_save_settings({"boost_applied_at": {}})
 
     connection.send_result(msg["id"], {"success": True})
 
