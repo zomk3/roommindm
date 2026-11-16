@@ -210,8 +210,11 @@ async def _async_check_version_mismatch(hass: HomeAssistant) -> None:
 
 
 def _file_hash(path: Path) -> str:
-    """Short content hash of *path*, for cache busting."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    """Short content hash of *path*, for cache busting; the version when it cannot be read."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return VERSION
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
