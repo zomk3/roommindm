@@ -26,6 +26,11 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["custom_components.roommind"]
 
+[tool.pytest.ini_options]
+# Async tests without @pytest.mark.asyncio (reusable schedules, tariff, shared AC) run too
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
 [tool.mypy]
 python_version = "3.12"
 check_untyped_defs = true

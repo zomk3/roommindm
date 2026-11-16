@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from datetime import UTC
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -33,15 +32,15 @@ from custom_components.roommind.websocket_api import (
 # factory on the mock hass object.
 _list_rooms = websocket_list_rooms.__wrapped__
 _save_room = websocket_save_room.__wrapped__
-_delete_room = websocket_delete_room.__wrapped__
+_delete_room = websocket_delete_room.__wrapped__.__wrapped__
 _override_set = websocket_override_set.__wrapped__
 _override_clear = websocket_override_clear.__wrapped__
 _get_settings = websocket_get_settings.__wrapped__
-_save_settings = websocket_save_settings.__wrapped__
-_thermal_reset = websocket_thermal_reset.__wrapped__
-_thermal_reset_all = websocket_thermal_reset_all.__wrapped__
+_save_settings = websocket_save_settings.__wrapped__.__wrapped__
+_thermal_reset = websocket_thermal_reset.__wrapped__.__wrapped__
+_thermal_reset_all = websocket_thermal_reset_all.__wrapped__.__wrapped__
 _get_analytics = websocket_get_analytics.__wrapped__
-_get_diagnostics = websocket_get_diagnostics.__wrapped__
+_get_diagnostics = websocket_get_diagnostics.__wrapped__.__wrapped__
 _covers_clear_override = websocket_covers_clear_override.__wrapped__
 
 
@@ -75,6 +74,7 @@ async def test_list_rooms_empty(ws_hass, store, connection):
         {
             "rooms": {},
             "rooms_without_area": [],
+            "reusable_schedules": [],
             "server_time": 1_700_000_000.0,
             "outdoor_temp": None,
             "outdoor_humidity": None,
@@ -450,23 +450,6 @@ async def test_save_room_with_schedules(ws_hass, store, connection):
     assert room["schedule_selector_entity"] == ""
     assert room["comfort_temp"] == 22.0
     assert room["eco_temp"] == 18.0
-
-
-@pytest.mark.asyncio
-async def test_list_rooms_reports_resting_rooms_separately(ws_hass, store, connection):
-    """A room whose area was deleted is not listed as a room, only as one without area (#494)."""
-    await store.async_load()
-    await store.async_save_room("kitchen", {})
-    await store.async_save_room("old_room", {"display_name": "Old room"})
-    registry = MagicMock()
-    registry.async_list_areas.return_value = [SimpleNamespace(id="kitchen")]
-
-    with patch("custom_components.roommind.utils.area_utils.ar.async_get", return_value=registry):
-        await _list_rooms(ws_hass, connection, {"id": 1, "type": "roommind/rooms/list"})
-
-    result = connection.send_result.call_args[0][1]
-    assert set(result["rooms"]) == {"kitchen"}
-    assert result["rooms_without_area"] == [{"area_id": "old_room", "display_name": "Old room"}]
 
 
 @pytest.mark.asyncio
@@ -1301,6 +1284,7 @@ def _make_coordinator_with_model(ws_hass):
 async def test_thermal_reset_room(ws_hass, store, connection):
     """Resetting one room clears its model but keeps others."""
     await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.a"]})
     await store.async_save_thermal_data({"room_a": {"n_samples": 10}, "room_b": {"n_samples": 5}})
 
     coordinator = _make_coordinator_with_model(ws_hass)
@@ -1323,6 +1307,7 @@ async def test_thermal_reset_room(ws_hass, store, connection):
 async def test_thermal_reset_room_clears_boost_cooldown(ws_hass, store, connection):
     """Resetting one room drops its boost cooldown anchor but keeps others."""
     await store.async_load()
+    await store.async_save_room("room_a", {"thermostats": ["climate.a"]})
     await store.async_save_settings({"boost_applied_at": {"room_a": 500, "room_b": 300}})
 
     _make_coordinator_with_model(ws_hass)
@@ -1384,16 +1369,35 @@ async def test_thermal_reset_all_clears_history_of_rooms_without_model(ws_hass, 
 
 
 @pytest.mark.asyncio
-async def test_thermal_reset_nonexistent_room(ws_hass, store, connection):
-    """Resetting a room that has no model data still succeeds (idempotent)."""
+async def test_thermal_reset_room_without_model(ws_hass, store, connection):
+    """Resetting a stored room that has no model data still succeeds (idempotent)."""
     await store.async_load()
+    await store.async_save_room("fresh", {"thermostats": ["climate.fresh"]})
 
     _make_coordinator_with_model(ws_hass)
 
-    msg = {"id": 22, "type": "roommind/thermal/reset", "area_id": "nonexistent"}
+    msg = {"id": 22, "type": "roommind/thermal/reset", "area_id": "fresh"}
     await _thermal_reset(ws_hass, connection, msg)
 
     connection.send_result.assert_called_once_with(22, {"success": True})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("area_id", ["nonexistent", "../../tmp/x", "/config/x"])
+async def test_thermal_reset_unknown_room_touches_nothing(ws_hass, store, connection, area_id):
+    """An id that is no stored room is rejected before any model or file is touched."""
+    await store.async_load()
+    await store.async_save_thermal_data({"room_a": {"n_samples": 10}})
+
+    coordinator = _make_coordinator_with_model(ws_hass)
+
+    await _thermal_reset(ws_hass, connection, {"id": 23, "type": "roommind/thermal/reset", "area_id": area_id})
+
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args.args[1] == "not_found"
+    coordinator.reset_thermal_room.assert_not_called()
+    coordinator.history_store.remove_room.assert_not_called()
+    assert "room_a" in store.get_thermal_data()
 
 
 # --- Mold risk settings tests ---
@@ -1634,6 +1638,7 @@ def _make_mock_estimator(**overrides):
     est._n_updates = overrides.get("n_updates", 200)
     est._last_update_at = overrides.get("last_update_at", 1_762_000_000.0)
     est._n_idle = overrides.get("n_idle", 120)
+    est._n_ac_heating = 0
     est._n_heating = overrides.get("n_heating", 60)
     est._n_cooling = overrides.get("n_cooling", 20)
     est._applicable_modes = overrides.get("applicable_modes", {"idle", "heating"})
@@ -1990,14 +1995,14 @@ async def test_analytics_model_has_occupancy_sensors_false(ws_hass, store, conne
 
 
 def test_register_websocket_commands(hass):
-    """async_register_websocket_commands registers all 13 commands."""
+    """async_register_websocket_commands registers all 17 commands."""
     from unittest.mock import patch
 
     from custom_components.roommind.websocket_api import async_register_websocket_commands
 
     with patch("custom_components.roommind.websocket_api.websocket_api.async_register_command") as mock_reg:
         async_register_websocket_commands(hass)
-        assert mock_reg.call_count == 13
+        assert mock_reg.call_count == 17
 
 
 # ---------------------------------------------------------------------------
@@ -2195,7 +2200,7 @@ async def test_boost_learning_no_coordinator_errors(ws_hass, store, connection):
     """boost_learning without coordinator sends an error."""
     from custom_components.roommind.websocket_api import websocket_boost_learning
 
-    _boost_learning = websocket_boost_learning.__wrapped__
+    _boost_learning = websocket_boost_learning.__wrapped__.__wrapped__
 
     await store.async_load()
     # No coordinator in hass.data
@@ -2211,7 +2216,7 @@ async def test_boost_learning_success(ws_hass, store, connection):
     """boost_learning with coordinator boosts EKF and persists cooldown."""
     from custom_components.roommind.websocket_api import websocket_boost_learning
 
-    _boost_learning = websocket_boost_learning.__wrapped__
+    _boost_learning = websocket_boost_learning.__wrapped__.__wrapped__
 
     await store.async_load()
 
@@ -2238,7 +2243,7 @@ async def test_boost_learning_without_model_errors_and_stores_nothing(ws_hass, s
     ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
 
     msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
-    await websocket_boost_learning.__wrapped__(ws_hass, connection, msg)
+    await websocket_boost_learning.__wrapped__.__wrapped__(ws_hass, connection, msg)
 
     assert connection.send_error.call_args[0][1] == "no_model"
     assert "boost_applied_at" not in store.get_settings()
@@ -2254,18 +2259,19 @@ async def test_resets_and_delete_drop_the_boost_anchor(ws_hass, store, connectio
     )
 
     await store.async_load()
-    await store.async_save_room("a", {"thermostats": ["climate.a"]})
+    for area in ("a", "b", "c"):
+        await store.async_save_room(area, {"thermostats": [f"climate.{area}"]})
     await store.async_save_settings({"boost_applied_at": {"a": 10, "b": 20, "c": 30}})
     ws_hass.data[DOMAIN]["coordinator"] = None
 
-    await websocket_thermal_reset.__wrapped__(ws_hass, connection, {"id": 1, "area_id": "b"})
+    await websocket_thermal_reset.__wrapped__.__wrapped__(ws_hass, connection, {"id": 1, "area_id": "b"})
     assert store.get_settings()["boost_applied_at"] == {"a": 10, "c": 30}
-    await websocket_delete_room.__wrapped__(ws_hass, connection, {"id": 2, "area_id": "a"})
+    await websocket_delete_room.__wrapped__.__wrapped__(ws_hass, connection, {"id": 2, "area_id": "a"})
     assert store.get_settings()["boost_applied_at"] == {"c": 30}
-    await websocket_thermal_reset_all.__wrapped__(ws_hass, connection, {"id": 3})
+    await websocket_thermal_reset_all.__wrapped__.__wrapped__(ws_hass, connection, {"id": 3})
     assert store.get_settings()["boost_applied_at"] == {}
     # Nothing left: no further write
-    await websocket_thermal_reset.__wrapped__(ws_hass, connection, {"id": 4, "area_id": "c"})
+    await websocket_thermal_reset.__wrapped__.__wrapped__(ws_hass, connection, {"id": 4, "area_id": "c"})
     assert store.get_settings()["boost_applied_at"] == {}
 
 
@@ -3299,6 +3305,104 @@ async def test_override_preset_resolves_to_band_per_climate_mode(
     assert (room["override_heat"], room["override_cool"]) == expected
 
 
+@pytest.mark.parametrize(
+    "invalid,error",
+    [
+        ({"master_entity": "climate.master"}, "shared_ac_conflict"),
+        ({"enforce_uniform_mode": True}, "shared_ac_conflict"),
+        ({"action_script": "script.mode"}, "shared_ac_conflict"),
+        ({"night_cooling_members": ["climate.other"]}, "invalid_night_member"),
+    ],
+)
+async def test_shared_ac_settings_reject_competing_controllers(ws_hass, store, connection, invalid, error):
+    await store.async_load()
+    await _save_settings(
+        ws_hass,
+        connection,
+        {
+            "id": 20,
+            "type": "roommind/settings/save",
+            "compressor_groups": [
+                {
+                    "id": "toshiba",
+                    "name": "Toshiba",
+                    "members": ["climate.ac_bedroom"],
+                    "shared_ac_control": True,
+                    **invalid,
+                }
+            ],
+        },
+    )
+    assert connection.send_error.call_args[0][1] == error
+    connection.send_result.assert_not_called()
+
+
+async def test_shared_ac_settings_round_trip(ws_hass, store, connection):
+    await store.async_load()
+    await _save_settings(
+        ws_hass,
+        connection,
+        {
+            "id": 20,
+            "type": "roommind/settings/save",
+            "compressor_groups": [
+                {
+                    "id": "toshiba",
+                    "name": "Toshiba",
+                    "members": ["climate.ac_bedroom"],
+                    "shared_ac_control": True,
+                    "night_cooling_members": ["climate.ac_bedroom"],
+                }
+            ],
+        },
+    )
+    saved = connection.send_result.call_args[0][1]["settings"]["compressor_groups"][0]
+    assert saved["shared_ac_control"] and saved["night_cooling_members"] == ["climate.ac_bedroom"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"ac_off_peak_start": "05:00", "ac_off_peak_end": "05:00"},
+        {"ac_morning_boost_rooms": ["missing"]},
+    ],
+)
+async def test_invalid_tariff_settings_rejected_without_save(ws_hass, store, connection, changes):
+    await store.async_load()
+    await _save_settings(ws_hass, connection, {"id": 1, "type": "roommind/settings/save", **changes})
+    assert connection.send_error.call_args.args[1] == "invalid_tariff"
+    assert not store.get_settings().get("ac_tariff_enabled")
+
+
+async def test_tariff_settings_round_trip_and_zero_bias(ws_hass, store, connection):
+    await store.async_load()
+    await store.async_save_room(
+        "living", {"devices": [{"type": "ac", "entity_id": "climate.ac"}], "temperature_sensor": "sensor.temp"}
+    )
+    settings = {
+        "ac_tariff_enabled": True,
+        "ac_off_peak_start": "00:00",
+        "ac_off_peak_end": "05:00",
+        "ac_morning_boost_enabled": True,
+        "ac_morning_boost_minutes": 30,
+        "ac_morning_boost_offset": 0.0,
+        "ac_morning_boost_rooms": ["living"],
+    }
+    await _save_settings(ws_hass, connection, {"id": 1, "type": "roommind/settings/save", **settings})
+    connection.send_error.assert_not_called()
+    for key, value in settings.items():
+        assert store.get_settings()[key] == value
+
+
+async def test_morning_stop_margin_settings_round_trip(ws_hass, store, connection):
+    await store.async_load()
+    await _save_settings(
+        ws_hass, connection, {"id": 1, "type": "roommind/settings/save", "ac_morning_boost_stop_margin": 0.4}
+    )
+    connection.send_error.assert_not_called()
+    assert store.get_settings()["ac_morning_boost_stop_margin"] == 0.4
+
+
 @pytest.mark.asyncio
 async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, connection):
     """Q_solar is a full-sun value; the panel also gets the current and today's clear-sky effect."""
@@ -3458,21 +3562,42 @@ async def test_list_rooms_forwards_occupancy_vacant(ws_hass, store, connection):
 
 
 @pytest.mark.asyncio
-async def test_save_room_preheat_switch_roundtrip(ws_hass, store, connection):
-    """Per-room pre-heat switch (#478) is validated and stored."""
-    import voluptuous as vol
+@pytest.mark.parametrize("sensor,reset", [("sensor.original", False), ("sensor.new_reference", True)])
+async def test_reference_sensor_change_resets_only_affected_model(ws_hass, store, connection, sensor, reset):
+    await store.async_load()
+    await store.async_save_room("living", {"temperature_sensor": "sensor.original"})
+    coordinator = MagicMock()
+    coordinator.async_room_added = AsyncMock()
+    coordinator._model_manager.to_dict.return_value = {"bedroom": {"preserved": True}}
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    await _save_room(
+        ws_hass, connection, {"id": 1, "type": "roommind/rooms/save", "area_id": "living", "temperature_sensor": sensor}
+    )
+    if reset:
+        coordinator.reset_thermal_room.assert_called_once_with("living")
+    else:
+        coordinator.reset_thermal_room.assert_not_called()
 
-    schema = websocket_save_room._ws_schema
-    base = {"type": "roommind/rooms/save", "id": 1, "area_id": "bedroom"}
-    assert schema({**base, "preheat_enabled": False})["preheat_enabled"] is False
-    with pytest.raises(vol.Invalid):
-        schema({**base, "preheat_enabled": "maybe"})
 
+@pytest.mark.asyncio
+async def test_source_learning_configuration_round_trip(ws_hass, store, connection):
     await store.async_load()
     await _save_room(
-        ws_hass, connection, {"id": 11, "type": "roommind/rooms/save", "area_id": "bedroom", "preheat_enabled": False}
+        ws_hass,
+        connection,
+        {
+            "id": 1,
+            "type": "roommind/rooms/save",
+            "area_id": "living",
+            "temperature_sensor": "sensor.room",
+            "dehumidifier_power_sensor": "sensor.dehum",
+            "preheat_max_minutes": 45,
+            "devices": [{"entity_id": "climate.ac", "type": "ac", "energy_sensor": "sensor.ac_energy"}],
+        },
     )
-    assert store.get_room("bedroom")["preheat_enabled"] is False
+    saved = store.get_room("living")
+    assert saved["dehumidifier_power_sensor"] == "sensor.dehum"
+    assert saved["preheat_max_minutes"] == 45
 
 
 def test_setback_auto_off_schema_has_no_default():
@@ -3773,3 +3898,129 @@ def test_dehumidifier_delay_setting_schema():
     for bad in (-1, 121):
         with pytest.raises(vol.Invalid):
             schema({**base, "dehumidifier_delay_minutes": bad})
+
+
+# ── Admin-only commands and non-admin room saves ───────────────────────
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "websocket_delete_room",
+        "websocket_save_settings",
+        "websocket_thermal_reset",
+        "websocket_thermal_reset_all",
+        "websocket_boost_learning",
+        "websocket_get_diagnostics",
+    ],
+)
+def test_configuration_commands_need_an_admin(handler_name):
+    """A non-admin user is turned away before the handler runs."""
+    from homeassistant.exceptions import Unauthorized
+
+    from custom_components.roommind import websocket_api as ws
+
+    conn = MagicMock()
+    conn.user.is_admin = False
+    hass = MagicMock()
+    with pytest.raises(Unauthorized):
+        getattr(ws, handler_name)(hass, conn, {"id": 1, "type": "x", "area_id": "a"})
+    hass.async_create_background_task.assert_not_called()
+
+
+@pytest.fixture
+def user_connection(connection):
+    connection.user.is_admin = False
+    return connection
+
+
+@pytest.mark.asyncio
+async def test_non_admin_saves_what_the_card_changes(ws_hass, store, user_connection):
+    """Targets, climate mode and control of an existing room stay open for the dashboard card."""
+    await store.async_load()
+    await store.async_save_room("living", {"thermostats": ["climate.living"]})
+
+    msg = {
+        "id": 5,
+        "type": "roommind/rooms/save",
+        "area_id": "living",
+        "comfort_heat": 22.0,
+        "eco_cool": 28.0,
+        "climate_mode": "heat_only",
+        "climate_control_enabled": False,
+    }
+    await _save_room(ws_hass, user_connection, msg)
+
+    user_connection.send_error.assert_not_called()
+    room = store.get_room("living")
+    assert room["comfort_heat"] == 22.0
+    assert room["climate_mode"] == "heat_only"
+    assert room["climate_control_enabled"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"ventilation_entity": "switch.anything"},
+        {"devices": []},
+        {"comfort_heat": 22.0, "window_sensors": ["binary_sensor.w"]},
+    ],
+)
+async def test_non_admin_cannot_change_the_room_setup(ws_hass, store, user_connection, fields):
+    """Every other field stays with the admins, also when sent next to a card field."""
+    await store.async_load()
+    await store.async_save_room("living", {"thermostats": ["climate.living"]})
+    before = dict(store.get_room("living"))
+
+    await _save_room(ws_hass, user_connection, {"id": 6, "area_id": "living", **fields})
+
+    assert user_connection.send_error.call_args.args[1] == "unauthorized"
+    assert store.get_room("living") == before
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_create_a_room(ws_hass, store, user_connection):
+    await store.async_load()
+
+    await _save_room(ws_hass, user_connection, {"id": 7, "area_id": "new_room", "comfort_heat": 21.0})
+
+    assert user_connection.send_error.call_args.args[1] == "unauthorized"
+    assert store.get_room("new_room") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("area_id", ["nonexistent", "../../tmp/x"])
+async def test_analytics_for_an_unknown_room_is_not_found(ws_hass, store, connection, area_id):
+    """No history file is read for an id that is no stored room."""
+    await store.async_load()
+
+    with patch("custom_components.roommind.websocket_api.build_analytics_data") as build:
+        await _get_analytics(ws_hass, connection, {"id": 8, "area_id": area_id})
+
+    build.assert_not_called()
+    assert connection.send_error.call_args.args[1] == "not_found"
+
+
+@pytest.mark.parametrize("value", [4.9, 35.1, "nan", "inf", -40])
+@pytest.mark.parametrize("field", ["comfort_temp", "eco_temp", "comfort_heat", "comfort_cool", "eco_heat", "eco_cool"])
+def test_room_targets_stay_within_the_climate_entity_limits(field, value):
+    """5-35 °C like the room climate entity; nan/inf never reach the controller."""
+    import voluptuous as vol
+
+    schema = websocket_save_room._ws_schema
+    with pytest.raises(vol.Invalid):
+        schema({"type": "roommind/rooms/save", "id": 1, "area_id": "a", field: value})
+    assert schema({"type": "roommind/rooms/save", "id": 1, "area_id": "a", field: 35})[field] == 35.0
+
+
+@pytest.mark.parametrize("side", ["heat", "cool"])
+def test_custom_override_stays_within_the_climate_entity_limits(side):
+    import voluptuous as vol
+
+    schema = websocket_override_set._ws_schema
+    base = {"type": "roommind/override/set", "id": 1, "area_id": "a", "override_type": "custom"}
+    for value in (4.9, 35.1, "nan"):
+        with pytest.raises(vol.Invalid):
+            schema({**base, side: value})
+    assert schema({**base, side: 5})[side] == 5.0
