@@ -85,6 +85,16 @@ export class RsAnalytics extends LitElement {
       this._selectedRoom = this.initialRoom;
     }
     let autoSelected = false;
+    // A room no longer offered (hidden on the dashboard, deleted) gives way to the first one
+    // (not while the rooms are still loading: a room opened by link would be lost)
+    if (
+      changedProps.has("rooms") &&
+      this._selectedRoom &&
+      Object.keys(this.rooms).length > 0 &&
+      !(this._selectedRoom in this.rooms)
+    ) {
+      this._selectedRoom = "";
+    }
     if (changedProps.has("rooms") && !this._selectedRoom) {
       const configured = Object.keys(this.rooms);
       if (configured.length > 0) {

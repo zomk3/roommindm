@@ -14,7 +14,7 @@ import { showToast } from "./utils/toast";
 import { errorText } from "./utils/errors";
 import { tokens } from "./styles/tokens";
 import { fireSaveStatus } from "./utils/events";
-import { computeAreaInfos, type AreaInfo } from "./utils/dashboard";
+import { computeAreaInfos, visibleRooms, type AreaInfo } from "./utils/dashboard";
 import type { HouseSummary } from "./components/dashboard/rs-dashboard";
 import {
   getSettingsCategory,
@@ -499,7 +499,7 @@ export class RoomMindPanel extends LitElement {
       case "analytics":
         return html`<rs-analytics
           .hass=${this.hass}
-          .rooms=${this._rooms}
+          .rooms=${visibleRooms(this._rooms, this._hiddenRooms, this._analyticsRoom)}
           .initialRoom=${this._analyticsRoom}
           .controlMode=${this._controlMode}
           @room-selected=${this._onAnalyticsRoomSelected}

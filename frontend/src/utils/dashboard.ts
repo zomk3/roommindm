@@ -121,3 +121,16 @@ export function moveInGroup(ids: readonly string[], id: string, delta: number): 
   next.splice(target, 0, id);
   return next;
 }
+
+/**
+ * Rooms other pages (analytics) offer: those shown on the dashboard. `keep` (a hidden room
+ * opened on purpose, by its room page or a link) stays, else the page would show another room.
+ */
+export function visibleRooms(
+  rooms: Record<string, RoomConfig>,
+  hiddenRooms: readonly string[],
+  keep = "",
+): Record<string, RoomConfig> {
+  const hidden = new Set(hiddenRooms);
+  return Object.fromEntries(Object.entries(rooms).filter(([id]) => !hidden.has(id) || id === keep));
+}
