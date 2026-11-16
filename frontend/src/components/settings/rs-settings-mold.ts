@@ -1,13 +1,15 @@
 /**
  * rs-settings-mold – Mold risk detection & prevention settings.
  */
-import { html, nothing } from "lit";
+import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { RsSettingsBase } from "./rs-settings-base";
+import "../shared/rs-number-field";
 import type { HomeAssistant } from "../../types";
 import { localize, type TranslationKey } from "../../utils/localize";
-import { getSelectValue } from "../../utils/events";
 import { tempUnit, toDisplayDelta } from "../../utils/temperature";
+import { formatNumber } from "../../utils/format";
+import "../shared/rs-segmented";
 
 // DIN 4108-2 temperature factor f_Rsi of the coldest spot (corner, window reveal) per insulation level.
 const INSULATION_LEVELS = [
@@ -39,144 +41,77 @@ export class RsSettingsMold extends RsSettingsBase {
     const l = this.hass.language;
 
     return html`
-      <!-- Detection section -->
       <div class="settings-section first">
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon
-                icon="mdi:bell-alert"
-                style="--mdc-icon-size: 18px; vertical-align: middle; margin-right: 4px"
-              ></ha-icon>
-              ${localize("mold.detection", l)}
-            </span>
-            <span class="toggle-hint">${localize("mold.detection_desc", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.moldDetectionEnabled}
-            @change=${(e: Event) =>
-              this._fire("moldDetectionEnabled", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("mold.detection", l)}
+          .secondary=${localize("mold.detection_desc", l)}
+          .checked=${this.moldDetectionEnabled}
+          @toggle-changed=${(e: CustomEvent<boolean>) => this._fire("moldDetectionEnabled", e.detail)}
+        ></rs-list-row>
         ${
           this.moldDetectionEnabled
             ? html`
-                <div class="threshold-grid" style="margin-top: 12px">
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(this.moldHumidityThreshold)}
-                      .label=${localize("mold.threshold", l)}
-                      .suffix=${"%"}
-                      type="number"
-                      step="1"
-                      min="50"
-                      max="90"
-                      @change=${(e: Event) => {
-                        const v = parseFloat((e.target as HTMLInputElement).value);
-                        if (!isNaN(v) && v >= 50 && v <= 90) this._fire("moldHumidityThreshold", v);
-                      }}
-                    ></ha-textfield>
-                    <span class="field-hint">${localize("mold.threshold_hint", l)}</span>
-                  </div>
-                  <div class="threshold-field">
-                    <ha-textfield
-                      .value=${String(this.moldSustainedMinutes)}
-                      .label=${localize("mold.sustained", l)}
-                      .suffix=${"min"}
-                      type="number"
-                      step="5"
-                      min="5"
-                      max="120"
-                      @change=${(e: Event) => {
-                        const v = parseInt((e.target as HTMLInputElement).value, 10);
-                        if (!isNaN(v) && v >= 5 && v <= 120) this._fire("moldSustainedMinutes", v);
-                      }}
-                    ></ha-textfield>
-                    <span class="field-hint">${localize("mold.sustained_hint", l)}</span>
-                  </div>
+                <div class="threshold-grid sub">
+                  <rs-number-field
+                    .label=${localize("mold.threshold", l)}
+                    suffix="%"
+                    .hint=${localize("mold.threshold_hint", l)}
+                    .min=${50}
+                    .max=${90}
+                    .value=${this.moldHumidityThreshold}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("moldHumidityThreshold", e.detail.value)}
+                  ></rs-number-field>
+                  <rs-number-field
+                    .label=${localize("mold.sustained", l)}
+                    suffix="min"
+                    .hint=${localize("mold.sustained_hint", l)}
+                    .min=${5}
+                    .max=${120}
+                    .value=${this.moldSustainedMinutes}
+                    @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                      this._fire("moldSustainedMinutes", e.detail.value)}
+                  ></rs-number-field>
                 </div>
               `
             : nothing
         }
       </div>
 
-      <!-- Prevention section -->
       <div class="settings-section">
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon
-                icon="mdi:shield-check"
-                style="--mdc-icon-size: 18px; vertical-align: middle; margin-right: 4px"
-              ></ha-icon>
-              ${localize("mold.prevention", l)}
-            </span>
-            <span class="toggle-hint">${localize("mold.prevention_desc", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.moldPreventionEnabled}
-            @change=${(e: Event) =>
-              this._fire("moldPreventionEnabled", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          .heading=${localize("mold.prevention", l)}
+          .secondary=${localize("mold.prevention_desc", l)}
+          .checked=${this.moldPreventionEnabled}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("moldPreventionEnabled", e.detail)}
+        ></rs-list-row>
         ${
           this.moldPreventionEnabled
             ? html`
-                <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 4px;">
-                  <ha-select
-                    style="width: 100%;"
-                    .value=${this.moldPreventionIntensity}
+                <div class="sub">
+                  <span class="field-label">${localize("mold.intensity", l)}</span>
+                  <rs-segmented
+                    wrap
                     .label=${localize("mold.intensity", l)}
-                    .options=${[
-                      {
-                        value: "light",
-                        label: localize("mold.intensity_light", l, {
-                          delta: String(toDisplayDelta(1, this.hass)),
-                          unit: tempUnit(this.hass),
-                        }),
-                      },
-                      {
-                        value: "medium",
-                        label: localize("mold.intensity_medium", l, {
-                          delta: String(toDisplayDelta(2, this.hass)),
-                          unit: tempUnit(this.hass),
-                        }),
-                      },
-                      {
-                        value: "strong",
-                        label: localize("mold.intensity_strong", l, {
-                          delta: String(toDisplayDelta(3, this.hass)),
-                          unit: tempUnit(this.hass),
-                        }),
-                      },
-                    ]}
-                    fixedMenuPosition
-                    @selected=${(e: Event) => {
-                      const v = getSelectValue(e) as "light" | "medium" | "strong";
+                    .options=${(["light", "medium", "strong"] as const).map((v, i) => ({
+                      value: v,
+                      label: localize(`mold.intensity_${v}`, l, {
+                        delta: formatNumber(toDisplayDelta(i + 1, this.hass), this.hass, 0, 1),
+                        unit: tempUnit(this.hass),
+                      }),
+                    }))}
+                    .value=${this.moldPreventionIntensity}
+                    @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                      const v = e.detail.value as "light" | "medium" | "strong";
                       if (v && v !== this.moldPreventionIntensity)
                         this._fire("moldPreventionIntensity", v);
                     }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                  >
-                    <ha-list-item value="light"
-                      >${localize("mold.intensity_light", l, {
-                        delta: String(toDisplayDelta(1, this.hass)),
-                        unit: tempUnit(this.hass),
-                      })}</ha-list-item
-                    >
-                    <ha-list-item value="medium"
-                      >${localize("mold.intensity_medium", l, {
-                        delta: String(toDisplayDelta(2, this.hass)),
-                        unit: tempUnit(this.hass),
-                      })}</ha-list-item
-                    >
-                    <ha-list-item value="strong"
-                      >${localize("mold.intensity_strong", l, {
-                        delta: String(toDisplayDelta(3, this.hass)),
-                        unit: tempUnit(this.hass),
-                      })}</ha-list-item
-                    >
-                  </ha-select>
+                  ></rs-segmented>
                   <span class="field-hint">${localize("mold.intensity_hint", l)}</span>
                 </div>
               `
@@ -184,101 +119,74 @@ export class RsSettingsMold extends RsSettingsBase {
         }
       </div>
 
-      <!-- Dehumidifier section (rooms enable their dehumidifier in the room settings) -->
+      <!-- Dehumidifiers: each room enables its own in the room's Mold protection card -->
       <div class="settings-section">
-        <div class="toggle-text">
-          <span class="toggle-label">
-            <ha-icon icon="mdi:air-humidifier"></ha-icon>
-            ${localize("mold.dehumidifier", l)}
-          </span>
-          <span class="toggle-hint">${localize("mold.dehumidifier_desc", l)}</span>
-        </div>
-        <div class="threshold-grid three" style="margin-top: 12px">
+        <h3 class="section-title">${localize("mold.dehumidifier", l)}</h3>
+        <p class="note">${localize("mold.dehumidifier_desc", l)}</p>
+        <div class="threshold-grid sub">
           ${this._minutesField("dehumidifierDelayMinutes", this.dehumidifierDelayMinutes, "mold.dehumidifier_delay", 120)}
           ${this._minutesField("dehumidifierMinOnMinutes", this.dehumidifierMinOnMinutes, "mold.dehumidifier_min_on", 60)}
           ${this._minutesField("dehumidifierMinOffMinutes", this.dehumidifierMinOffMinutes, "mold.dehumidifier_min_off", 60)}
         </div>
-        <div class="toggle-row" style="margin-top: 16px">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon icon="mdi:sleep"></ha-icon>
-              ${localize("mold.dehumidifier_quiet", l)}
-            </span>
-            <span class="toggle-hint">${localize("mold.dehumidifier_quiet_desc", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.dehumidifierQuietEnabled}
-            @change=${(e: Event) =>
-              this._fire("dehumidifierQuietEnabled", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          icon="mdi:sleep"
+          .heading=${localize("mold.dehumidifier_quiet", l)}
+          .secondary=${localize("mold.dehumidifier_quiet_desc", l)}
+          .checked=${this.dehumidifierQuietEnabled}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("dehumidifierQuietEnabled", e.detail)}
+        ></rs-list-row>
         ${
           this.dehumidifierQuietEnabled
-            ? html`
-                <div class="threshold-grid" style="margin-top: 12px">
-                  ${this._timeField("dehumidifierQuietStart", this.dehumidifierQuietStart, "mold.dehumidifier_quiet_start")}
-                  ${this._timeField("dehumidifierQuietEnd", this.dehumidifierQuietEnd, "mold.dehumidifier_quiet_end")}
-                </div>
-              `
+            ? html`<div class="threshold-grid sub">
+                ${this._timeField("dehumidifierQuietStart", this.dehumidifierQuietStart, "mold.dehumidifier_quiet_start")}
+                ${this._timeField("dehumidifierQuietEnd", this.dehumidifierQuietEnd, "mold.dehumidifier_quiet_end")}
+              </div>`
             : nothing
         }
-        <div class="toggle-row" style="margin-top: 16px">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon icon="mdi:window-open-variant"></ha-icon>
-              ${localize("mold.ventilation_notify", l)}
-            </span>
-            <span class="toggle-hint">${localize("mold.ventilation_notify_desc", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.dehumidifierVentilationNotify}
-            @change=${(e: Event) =>
-              this._fire("dehumidifierVentilationNotify", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
-        <div class="toggle-row" style="margin-top: 16px">
-          <div class="toggle-text">
-            <span class="toggle-label">
-              <ha-icon icon="mdi:weather-windy"></ha-icon>
-              ${localize("mold.prefer_ventilation", l)}
-            </span>
-            <span class="toggle-hint">${localize("mold.prefer_ventilation_desc", l)}</span>
-          </div>
-          <ha-switch
-            .checked=${this.dehumidifierPreferVentilation}
-            @change=${(e: Event) =>
-              this._fire("dehumidifierPreferVentilation", (e.target as HTMLInputElement).checked)}
-          ></ha-switch>
-        </div>
+        <rs-list-row
+          switch
+          wrap
+          icon="mdi:window-open-variant"
+          .heading=${localize("mold.ventilation_notify", l)}
+          .secondary=${localize("mold.ventilation_notify_desc", l)}
+          .checked=${this.dehumidifierVentilationNotify}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("dehumidifierVentilationNotify", e.detail)}
+        ></rs-list-row>
+        <rs-list-row
+          switch
+          wrap
+          icon="mdi:weather-windy"
+          .heading=${localize("mold.prefer_ventilation", l)}
+          .secondary=${localize("mold.prefer_ventilation_desc", l)}
+          .checked=${this.dehumidifierPreferVentilation}
+          @toggle-changed=${(e: CustomEvent<boolean>) =>
+            this._fire("dehumidifierPreferVentilation", e.detail)}
+        ></rs-list-row>
       </div>
 
       ${
         this.moldDetectionEnabled || this.moldPreventionEnabled
           ? html`
               <div class="settings-section">
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <ha-select
-                    style="width: 100%;"
-                    .value=${this._insulationValue()}
+                <div>
+                  <span class="field-label">${localize("mold.insulation", l)}</span>
+                  <rs-segmented
+                    wrap
                     .label=${localize("mold.insulation", l)}
                     .options=${INSULATION_LEVELS.map((lvl) => ({
                       value: String(lvl.f_rsi),
                       label: localize(lvl.key, l),
                     }))}
-                    fixedMenuPosition
-                    @selected=${(e: Event) => {
-                      const v = parseFloat(getSelectValue(e));
+                    .value=${this._insulationValue()}
+                    @value-changed=${(e: CustomEvent<{ value: string }>) => {
+                      const v = parseFloat(e.detail.value);
                       if (!isNaN(v) && v !== this.moldFRsi) this._fire("moldFRsi", v);
                     }}
-                    @closed=${(e: Event) => e.stopPropagation()}
-                  >
-                    ${INSULATION_LEVELS.map(
-                      (lvl) =>
-                        html`<ha-list-item value=${String(lvl.f_rsi)}
-                          >${localize(lvl.key, l)}</ha-list-item
-                        >`,
-                    )}
-                  </ha-select>
+                  ></rs-segmented>
                   <span class="field-hint">${localize("mold.insulation_hint", l)}</span>
                 </div>
               </div>
@@ -290,24 +198,16 @@ export class RsSettingsMold extends RsSettingsBase {
 
   private _minutesField(key: string, value: number, label: TranslationKey, max: number) {
     const l = this.hass.language;
-    return html`
-      <div class="threshold-field">
-        <ha-textfield
-          .value=${String(value)}
-          .label=${localize(label, l)}
-          .suffix=${"min"}
-          type="number"
-          step="1"
-          min="0"
-          max=${max}
-          @change=${(e: Event) => {
-            const v = parseInt((e.target as HTMLInputElement).value, 10);
-            if (!isNaN(v) && v >= 0 && v <= max) this._fire(key, v);
-          }}
-        ></ha-textfield>
-        <span class="field-hint">${localize(`${label}_hint` as TranslationKey, l)}</span>
-      </div>
-    `;
+    return html`<rs-number-field
+      .label=${localize(label, l)}
+      suffix="min"
+      .hint=${localize(`${label}_hint` as TranslationKey, l)}
+      .min=${0}
+      .max=${max}
+      .step=${1}
+      .value=${value}
+      @value-changed=${(e: CustomEvent<{ value: number }>) => this._fire(key, e.detail.value)}
+    ></rs-number-field>`;
   }
 
   private _timeField(key: string, value: string, label: TranslationKey) {
@@ -333,7 +233,14 @@ export class RsSettingsMold extends RsSettingsBase {
     return String(nearest.f_rsi);
   }
 
-  static styles = [RsSettingsBase.settingsBaseStyles];
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .sub {
+        margin-top: var(--rs-space-3);
+      }
+    `,
+  ];
 }
 
 declare global {

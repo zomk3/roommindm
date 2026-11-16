@@ -52,7 +52,13 @@ from .coordinator import RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
 from .utils.area_utils import rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
-from .utils.schedule_utils import mask_override_band, next_schedule_change, override_preset_band
+from .utils.schedule_utils import (
+    band_in_force,
+    mask_override_band,
+    override_hold_until,
+    override_preset_band,
+    without_temporary_shifts,
+)
 
 _CLIMATE_MODE_TO_HVAC = {
     CLIMATE_MODE_AUTO: HVACMode.HEAT_COOL,
@@ -97,23 +103,9 @@ async def async_setup_entry(
 
 
 def _current_band(coordinator: RoomMindCoordinator, area_id: str, room: dict) -> tuple[float | None, float | None]:
-    """Return the (heat, cool) band currently in force for this room.
-
-    An active override wins. Otherwise it is the band the coordinator resolved
-    last cycle (minus mold prevention, which is not part of the user's band).
-    Falls back to the comfort band when no live targets exist yet or the room
-    is forced off.
-    """
-    if is_override_active(room):
-        return room.get("override_heat"), room.get("override_cool")
+    """Return the (heat, cool) band currently in force for this room."""
     live = ((coordinator.data or {}).get("rooms") or {}).get(area_id) or {}
-    heat = live.get("heat_target")
-    cool = live.get("cool_target")
-    if heat is None and cool is None:
-        return override_preset_band(room, OVERRIDE_BOOST)
-    if heat is not None and live.get("mold_prevention_active"):
-        heat -= live.get("mold_prevention_delta") or 0
-    return heat, cool
+    return band_in_force(room, live)
 
 
 def _band_from_temperature_call(
@@ -164,6 +156,8 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
     """Climate entity for room override control."""
 
     _attr_has_entity_name = True
+    # Deprecated (#238): only rooms set up before 2.0 keep it enabled; HA applies this to new registry entries only
+    _attr_entity_registry_enabled_default = False
     _attr_icon = "mdi:thermometer-alert"
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -490,15 +484,13 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         return float(val) if isinstance(val, (int, float)) else None
 
     def _band(self) -> tuple[float | None, float | None]:
-        """The band the room is held at, without mold prevention (not part of the user's band)."""
+        """The band the room is held at, without mold prevention and price shift (not the user's band)."""
         room = self._room()
         if self._override_in_force():
             heat, cool = room.get("override_heat"), room.get("override_cool")
         else:
             live = self._live()
-            heat, cool = live.get("heat_target"), live.get("cool_target")
-            if heat is not None and live.get("mold_prevention_active"):
-                heat -= live.get("mold_prevention_delta") or 0
+            heat, cool = without_temporary_shifts(live.get("heat_target"), live.get("cool_target"), live)
         if self._climate_mode() == CLIMATE_MODE_AUTO:
             # The dual slider sends both sides, HA rejects a call with only one of them
             return _fill_auto_band(heat, cool, room)
@@ -548,6 +540,8 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             "presence_away": bool(live.get("presence_away", False)),
             "occupancy_vacant": bool(live.get("occupancy_vacant", False)),
             "vacation": vacation_until is not None and time.time() < vacation_until,
+            # cheap / normal / expensive, None without a price source
+            "price_level": live.get("price_level"),
         }
 
     async def _async_set_override(self, heat: float | None, cool: float | None, override_type: str) -> None:
@@ -557,7 +551,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
             {
                 "override_heat": heat,
                 "override_cool": cool,
-                "override_until": next_schedule_change(self.coordinator.hass, self._room()),
+                "override_until": override_hold_until(self.coordinator.hass, self._room()),
                 "override_type": override_type,
             },
         )

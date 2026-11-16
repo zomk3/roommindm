@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from homeassistant.components.frontend import (
+    add_extra_js_url,
     async_register_built_in_panel,
     async_remove_panel,
 )
@@ -33,6 +34,8 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+CARD_URL = "/roommind/roommind-card.js"
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the RoomMind integration (YAML, runs once)."""
@@ -53,6 +56,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     clear_valve_cache()  # after an unload, which stopped valve control
     coordinator = RoomMindCoordinator(hass, entry)
+    # Before the first refresh: its commands are what later setpoint changes are judged against (#259)
+    entry.async_on_unload(coordinator.device_setpoints.async_track(hass))
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -66,6 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_schedule_deprecation_check(hass)
 
     await _async_register_panel(hass)
+    await _async_register_card(hass)
     await _async_check_version_mismatch(hass)
 
     return True
@@ -197,6 +203,28 @@ async def _async_check_version_mismatch(hass: HomeAssistant) -> None:
 def _file_hash(path: Path) -> str:
     """Short content hash of *path*, for cache busting."""
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Load the dashboard card on every frontend page, so it needs no manual resource (#346).
+
+    The version query makes browsers fetch the new card after an update.
+    """
+    if hass.data[DOMAIN].get("card_registered"):
+        return
+
+    card_js = Path(__file__).parent / "frontend" / "roommind-card.js"
+    if not card_js.exists():
+        _LOGGER.warning("RoomMind card JS not found at %s – dashboard card not available", card_js)
+        return
+
+    try:
+        await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(card_js), False)])
+    except RuntimeError:
+        _LOGGER.debug("RoomMind card static path already registered")
+
+    add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
+    hass.data[DOMAIN]["card_registered"] = True
 
 
 async def _async_register_panel(hass: HomeAssistant) -> None:

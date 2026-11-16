@@ -8,6 +8,9 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import CoreState
+from homeassistant.helpers import entity_registry as er
+
 from ..const import (
     CLIMATE_MODE_HEAT_ONLY,
     COVER_CONFIDENCE_REFERENCE_SOLAR,
@@ -24,6 +27,8 @@ from ..const import (
     COVER_SMOOTHING_RISE_MINUTES,
     COVER_SOLAR_MIN,
     DEFAULT_COMFORT_COOL,
+    DEFAULT_COVERS_OUTDOOR_MIN_TEMP,
+    MAX_SENSOR_STALENESS,
     MODE_COOLING,
     TargetTemps,
 )
@@ -63,6 +68,11 @@ class CoverResult:
     decision: CoverDecision
 
 
+def _unreadable(state: Any) -> bool:
+    """True while an entity has no state yet or reports unavailable/unknown (e.g. right after a start)."""
+    return state is None or state.state in ("unavailable", "unknown")
+
+
 class CoverOrchestrator:
     """Coordinates cover position reading, schedule resolution, and control decisions."""
 
@@ -79,6 +89,7 @@ class CoverOrchestrator:
         # (value, timestamp) per room; see _smooth()
         self._smoothed_temp: dict[str, tuple[float, float]] = {}
         self._smoothed_excess: dict[str, tuple[float, float]] = {}
+        self._running_since: float | None = None  # first cycle that saw HA fully running
 
     def set_model_manager(self, model_manager: RoomModelManager) -> None:
         """Update the model manager reference (used after full thermal reset)."""
@@ -93,16 +104,9 @@ class CoverOrchestrator:
         cover_eids: list[str] = room.get("covers", [])
         cover_positions: list[int] = []
         for eid in cover_eids:
-            cstate = self.hass.states.get(eid)
-            if cstate is None:
-                continue
-            pos = cstate.attributes.get("current_position")
+            pos = self._reading(eid)
             if pos is not None:
-                cover_positions.append(int(pos))
-            elif cstate.state == "closed":
-                cover_positions.append(0)
-            elif cstate.state == "open":
-                cover_positions.append(100)
+                cover_positions.append(pos)
 
         if cover_positions:
             self._cover_manager.update_position(
@@ -125,8 +129,13 @@ class CoverOrchestrator:
         q_solar: float,
         predicted_peak_temp: float | None,
         has_override: bool,
+        window_open: bool = False,
     ) -> CoverResult:
-        """Process cover control for a room: MPC check, schedule, prediction, evaluate, apply."""
+        """Process cover control for a room: MPC check, schedule, prediction, evaluate, apply.
+
+        *window_open* is the raw window state (no open/close delay, pending counts
+        as open). With ``covers_window_hold`` it keeps the covers from going down.
+        """
         # Early exit: when auto control is disabled, do nothing.
         # Schedule, night close and MPC are all suppressed — covers stay wherever they are.
         if not room.get("covers_auto_enabled", False):
@@ -163,9 +172,14 @@ class CoverOrchestrator:
         _forced_reason = ""
         _active_cover_sched_idx = -1
         _solar_gated = True  # True = solar protection allowed (default); False = gate schedule is off
+        _forced_unknown = False  # a force schedule (or its selector) has no readable state yet
 
         cover_schedules = room.get("cover_schedules", [])
         if cover_schedules:
+            _selector = room.get("cover_schedule_selector_entity", "")
+            _any_force = any(e.get("mode", "force") != "gate" for e in cover_schedules)
+            if _selector and _any_force and self._may_still_load(_selector):
+                _forced_unknown = True
             _active_cover_sched_idx = resolve_schedule_index(
                 self.hass,
                 room,
@@ -190,6 +204,8 @@ class CoverOrchestrator:
                             )
                         else:
                             _solar_gated = _sched_st.state == "on"
+                    elif _unreadable(_sched_st):
+                        _forced_unknown = _forced_unknown or self._may_still_load(eid)
                     elif _sched_st is not None and _sched_st.state == "on":
                         # Force mode (default): read position attribute and force covers.
                         _block_pos = _sched_st.attributes.get("position")
@@ -298,12 +314,18 @@ class CoverOrchestrator:
         if _oriented_q_solar < COVER_SOLAR_MIN and _surface_azimuths:
             _cover_predicted_peak = cover_target
 
+        # None (store default up to 1.8.2) means the default the room page shows.
         _outdoor_min = room.get("covers_outdoor_min_temp")
-        if _outdoor_min is not None and outdoor_temp is not None and outdoor_temp < _outdoor_min:
+        if _outdoor_min is None:
+            _outdoor_min = DEFAULT_COVERS_OUTDOOR_MIN_TEMP
+        if outdoor_temp is not None and outdoor_temp < _outdoor_min:
             _cover_predicted_peak = cover_target
 
         # Block E: Evaluate + apply
         cover_eids = room.get("covers", [])
+        _cover_min_positions: dict[str, int] = room.get("cover_min_positions", {})
+        window_hold = window_open and room.get("covers_window_hold", False)
+        before = self._cover_manager.snapshot(area_id) if window_hold else None
         cover_decision = self._cover_manager.evaluate(
             area_id,
             covers_auto_enabled=room.get("covers_auto_enabled", False),
@@ -317,12 +339,24 @@ class CoverOrchestrator:
             q_solar=q_solar,
             has_active_override=has_override,
             forced_position=_forced_position,
+            forced_expected=(
+                self._expected_position(cover_eids, _forced_position, _cover_min_positions)
+                if _forced_position is not None
+                else None
+            ),
             forced_reason=_forced_reason,
+            forced_unknown=_forced_unknown,
             current_temp=current_temp,
             solar_gated=_solar_gated,
         )
+        if (
+            before is not None
+            and cover_decision.changed
+            and self._lowers_any(cover_eids, cover_decision.target_position, _cover_min_positions)
+        ):
+            cover_decision = self._cover_manager.hold(area_id, before, "window_hold")
+            _forced_position = None
 
-        _cover_min_positions: dict[str, int] = room.get("cover_min_positions", {})
         if cover_decision.changed:
             _LOGGER.debug(
                 "Cover control [%s]: %s → position %d%%",
@@ -336,28 +370,92 @@ class CoverOrchestrator:
                 cover_decision.target_position,
                 cover_min_positions=_cover_min_positions or None,
             )
-            expected_positions: list[int] = []
-            for eid in cover_eids:
-                cstate = self.hass.states.get(eid)
-                if cstate is None:
-                    continue
-                supported = cstate.attributes.get("supported_features", 0) or 0
-                if supported & _SUPPORT_SET_POSITION:
-                    expected_positions.append(max(_cover_min_positions.get(eid, 0), cover_decision.target_position))
-                elif cover_decision.target_position < 100:
-                    expected_positions.append(0)
-                else:
-                    expected_positions.append(100)
-            if expected_positions:
-                self._cover_manager.set_commanded_position(
-                    area_id, int(sum(expected_positions) / len(expected_positions))
-                )
+            expected = self._expected_position(cover_eids, cover_decision.target_position, _cover_min_positions)
+            if expected is not None:
+                self._cover_manager.set_commanded_position(area_id, expected)
 
         return CoverResult(
             forced_reason=_forced_reason if _forced_position is not None else "",
             active_cover_schedule_index=_active_cover_sched_idx,
             decision=cover_decision,
         )
+
+    def _may_still_load(self, entity_id: str) -> bool:
+        """True while an unreadable force source may still get its state (start), False once it is gone.
+
+        A deleted helper or selector (no state, no registry entry while HA runs) and one still
+        unreadable MAX_SENSOR_STALENESS after HA started running would otherwise keep a hand-closed
+        cover counting as found inside a forced phase for good (#499).
+        """
+        state = self.hass.states.get(entity_id)
+        if not _unreadable(state):
+            return False
+        if self.hass.state is not CoreState.running:
+            return True
+        now = time.monotonic()  # a wall clock jump (NTP on a Pi without RTC) must not end the window
+        if self._running_since is None:
+            self._running_since = now
+        if now - self._running_since > MAX_SENSOR_STALENESS:
+            return False
+        return state is not None or er.async_get(self.hass).async_get(entity_id) is not None
+
+    def _reading(self, eid: str) -> int | None:
+        """Position a cover reports, None while it reports none (unavailable, moving binary cover)."""
+        cstate = self.hass.states.get(eid)
+        if cstate is None:
+            return None
+        pos = cstate.attributes.get("current_position")
+        if pos is not None:
+            return int(pos)
+        return {"closed": 0, "open": 100}.get(cstate.state)
+
+    def _expected_position(
+        self, cover_eids: list[str], target_position: int, min_positions: dict[str, int]
+    ) -> int | None:
+        """Room average the covers report once *target_position* is applied (per-cover minimum, binary covers).
+
+        Counts the same covers as read_positions(), else the two averages never meet.
+        """
+        expected: list[int] = []
+        for eid in cover_eids:
+            cstate = self.hass.states.get(eid)
+            if cstate is None or self._reading(eid) is None:
+                continue
+            supported = cstate.attributes.get("supported_features", 0) or 0
+            if supported & _SUPPORT_SET_POSITION:
+                expected.append(max(min_positions.get(eid, 0), target_position))
+            elif target_position < 100:
+                expected.append(0)
+            else:
+                expected.append(100)
+        return int(sum(expected) / len(expected)) if expected else None
+
+    def _lowers_any(self, cover_eids: list[str], target_position: int, min_positions: dict[str, int]) -> bool:
+        """Return True if sending *target_position* would move any cover down.
+
+        Checked per cover against its own reading: the room average can rise
+        while one cover still goes down. A cover without a known position counts
+        as going down unless it is sent fully open.
+        """
+        for eid in cover_eids:
+            cstate = self.hass.states.get(eid)
+            if cstate is None:
+                continue
+            supported = cstate.attributes.get("supported_features", 0) or 0
+            if supported & _SUPPORT_SET_POSITION:
+                goal = max(min_positions.get(eid, 0), target_position)
+            elif target_position < 100:
+                goal = 0
+            else:
+                continue
+            if goal >= 100:
+                continue
+            pos = cstate.attributes.get("current_position")
+            if pos is None:
+                pos = {"closed": 0, "open": 100}.get(cstate.state)
+            if pos is None or goal < int(pos):
+                return True
+        return False
 
     def _estimate_solar_peak_temp(
         self,

@@ -1,15 +1,16 @@
 /**
  * rs-mold-protection – a room's mold protection: prevention heating and the dehumidifier.
  *
- * Lives in the room's "Schedule & temperatures" section. The dehumidifier device and its
- * tank sensor are chosen under Devices, the humidity sensor under Sensors.
+ * Lives in the room's own "Mold protection" card. The dehumidifier device and its tank sensor
+ * are chosen under Devices, the humidity sensor under Sensors.
  */
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../types";
 import { localize } from "../utils/localize";
-import { toggleFieldStyles } from "../styles/toggle-field-styles";
-import "./shared/rs-toggle-row";
+import { tokens } from "../styles/tokens";
+import "./shared/rs-list-row";
+import "./shared/rs-number-field";
 
 @customElement("rs-mold-protection")
 export class RsMoldProtection extends LitElement {
@@ -23,47 +24,28 @@ export class RsMoldProtection extends LitElement {
   @property({ type: Boolean }) public moldPreventionHeating = true;
 
   static styles = [
-    toggleFieldStyles,
+    tokens,
     css`
       :host {
         display: block;
       }
-      .section-subtitle {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        margin: 16px 0 8px 0;
-        text-transform: uppercase;
-        letter-spacing: 0.4px;
+      .bounds {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--rs-space-4);
+        margin-top: var(--rs-space-3);
       }
-      .edit-body {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-      .view-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 14px;
-        padding: 2px 0;
-      }
-      .view-row ha-icon {
-        --mdc-icon-size: 18px;
-        color: var(--secondary-text-color);
-      }
-      .view-row.off {
-        color: var(--secondary-text-color);
+      @media (max-width: 420px) {
+        .bounds {
+          grid-template-columns: 1fr;
+        }
       }
     `,
   ];
 
   render() {
     const l = this.hass.language;
-    return html`
-      <div class="section-subtitle">${localize("mold.title", l)}</div>
-      ${this.editing ? this._renderEdit(l) : this._renderView(l)}
-    `;
+    return this.editing ? this._renderEdit(l) : this._renderView(l);
   }
 
   private _renderView(l: string) {
@@ -71,22 +53,29 @@ export class RsMoldProtection extends LitElement {
       (this.hass.states[this.dehumidifierEntity]?.attributes?.friendly_name as string) ||
       this.dehumidifierEntity;
     return html`
-      <div class="view-row ${this.moldPreventionHeating ? "" : "off"}">
-        <ha-icon icon="mdi:shield-check"></ha-icon>
-        ${localize("mold.room_heating_title", l)}:
-        ${localize(this.moldPreventionHeating ? "common.on" : "common.off", l)}
-      </div>
+      <rs-list-row
+        clickable
+        chevron
+        icon="mdi:shield-check"
+        .heading=${localize("mold.room_heating_title", l)}
+        .value=${localize(this.moldPreventionHeating ? "common.on" : "common.off", l)}
+        @row-click=${this._fireEdit}
+      ></rs-list-row>
       ${
         this.dehumidifierEntity
-          ? html`<div class="view-row ${this.dehumidifierEnabled ? "" : "off"}">
-              <ha-icon icon="mdi:air-humidifier"></ha-icon>
-              ${localize("dehumidifier.enabled", l)}:
-              ${
+          ? html`<rs-list-row
+              clickable
+              chevron
+              icon=${this.dehumidifierEnabled ? "mdi:air-humidifier" : "mdi:air-humidifier-off"}
+              .heading=${localize("dehumidifier.enabled", l)}
+              .secondary=${
                 this.dehumidifierEnabled
-                  ? html`${name} · ${this.dehumidifierLower}–${this.dehumidifierUpper}%`
-                  : localize("common.off", l)
+                  ? `${name} · ${this.dehumidifierLower}–${this.dehumidifierUpper} %`
+                  : ""
               }
-            </div>`
+              .value=${localize(this.dehumidifierEnabled ? "common.on" : "common.off", l)}
+              @row-click=${this._fireEdit}
+            ></rs-list-row>`
           : nothing
       }
     `;
@@ -95,70 +84,63 @@ export class RsMoldProtection extends LitElement {
   private _renderEdit(l: string) {
     const dehumidifierReady = !!this.dehumidifierEntity && !!this.humiditySensor;
     return html`
-      <div class="edit-body">
-        <rs-toggle-row
-          .label=${localize("mold.room_heating_title", l)}
-          .hint=${localize("mold.room_heating_hint", l)}
-          .checked=${this.moldPreventionHeating}
-          @toggle-changed=${(e: CustomEvent<boolean>) => {
-            e.stopPropagation();
-            this._fire("mold_prevention_heating", e.detail);
-          }}
-        ></rs-toggle-row>
-        <rs-toggle-row
-          .label=${localize("dehumidifier.enabled", l)}
-          .hint=${localize(dehumidifierReady ? "dehumidifier.hint" : "dehumidifier.requires", l)}
-          .checked=${this.dehumidifierEnabled}
-          .disabled=${!dehumidifierReady}
-          @toggle-changed=${(e: CustomEvent<boolean>) => {
-            e.stopPropagation();
-            this._fire("dehumidifier_enabled", e.detail);
-          }}
-        ></rs-toggle-row>
-        ${
-          this.dehumidifierEnabled
-            ? html`
-                <div class="threshold-grid">
-                  <div class="threshold-field">
-                    <ha-textfield
-                      type="number"
-                      step="1"
-                      min="1"
-                      max=${this.dehumidifierUpper - 1}
-                      suffix="%"
-                      .label=${localize("dehumidifier.lower", l)}
-                      .value=${String(this.dehumidifierLower)}
-                      @change=${(e: Event) => this._onBoundChange(e, true)}
-                    ></ha-textfield>
-                  </div>
-                  <div class="threshold-field">
-                    <ha-textfield
-                      type="number"
-                      step="1"
-                      min=${this.dehumidifierLower + 1}
-                      max="100"
-                      suffix="%"
-                      .label=${localize("dehumidifier.upper", l)}
-                      .value=${String(this.dehumidifierUpper)}
-                      @change=${(e: Event) => this._onBoundChange(e, false)}
-                    ></ha-textfield>
-                  </div>
-                </div>
-              `
-            : nothing
-        }
-      </div>
+      <rs-list-row
+        switch
+        wrap
+        icon="mdi:shield-check"
+        .heading=${localize("mold.room_heating_title", l)}
+        .secondary=${localize("mold.room_heating_hint", l)}
+        .checked=${this.moldPreventionHeating}
+        @toggle-changed=${(e: CustomEvent<boolean>) => {
+          e.stopPropagation();
+          this._fire("mold_prevention_heating", e.detail);
+        }}
+      ></rs-list-row>
+      <rs-list-row
+        switch
+        wrap
+        icon="mdi:air-humidifier"
+        .heading=${localize("dehumidifier.enabled", l)}
+        .secondary=${localize(dehumidifierReady ? "dehumidifier.hint" : "dehumidifier.requires", l)}
+        .checked=${this.dehumidifierEnabled}
+        .disabled=${!dehumidifierReady}
+        @toggle-changed=${(e: CustomEvent<boolean>) => {
+          e.stopPropagation();
+          this._fire("dehumidifier_enabled", e.detail);
+        }}
+      ></rs-list-row>
+      ${
+        this.dehumidifierEnabled
+          ? html`<div class="bounds">
+              <rs-number-field
+                .label=${localize("dehumidifier.lower", l)}
+                suffix="%"
+                .min=${1}
+                .max=${this.dehumidifierUpper - 1}
+                .step=${1}
+                .value=${this.dehumidifierLower}
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._fire("dehumidifier_lower_bound", e.detail.value)}
+              ></rs-number-field>
+              <rs-number-field
+                .label=${localize("dehumidifier.upper", l)}
+                suffix="%"
+                .min=${this.dehumidifierLower + 1}
+                .max=${100}
+                .step=${1}
+                .value=${this.dehumidifierUpper}
+                @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                  this._fire("dehumidifier_upper_bound", e.detail.value)}
+              ></rs-number-field>
+            </div>`
+          : nothing
+      }
     `;
   }
 
-  private _onBoundChange(e: Event, lower: boolean) {
-    const v = parseInt((e.target as HTMLInputElement).value, 10);
-    const ok = lower
-      ? v >= 1 && v < this.dehumidifierUpper
-      : v > this.dehumidifierLower && v <= 100;
-    if (!isNaN(v) && ok) {
-      this._fire(lower ? "dehumidifier_lower_bound" : "dehumidifier_upper_bound", v);
-    }
+  private _fireEdit(e: Event) {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent("edit-click", { bubbles: true, composed: true }));
   }
 
   private _fire(key: string, value: boolean | number) {

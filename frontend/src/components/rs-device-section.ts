@@ -4,13 +4,22 @@ import type { HomeAssistant, HassArea, DeviceConfig, DeviceType } from "../types
 import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
-import { tempUnit, toDisplayDelta, toCelsiusDelta, usesFahrenheit } from "../utils/temperature";
-import { resolveHeatingSystemType } from "../utils/device-utils";
-import { masterDetailStyles } from "../styles/master-detail-styles";
+import { tempUnit, toDisplayDelta } from "../utils/temperature";
+import { fanModeLabel, resolveHeatingSystemType } from "../utils/device-utils";
+import { formatMinutes, formatNumber } from "../utils/format";
+import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
-import "./shared/rs-master-detail";
+import { formStyles } from "../styles/form-styles";
+import type { RsSegmentOption } from "./shared/rs-segmented";
+import "./shared/rs-confirm-dialog";
+import "./shared/rs-field";
+import "./shared/rs-number-field";
 import "./shared/rs-info-icon";
-import "./shared/rs-toggle-row";
+import "./shared/rs-list-row";
+import "./shared/rs-segmented";
+
+// Mirrors DEFAULT_IDLE_SETBACK_OFFSET in utils/device_utils.py.
+const IDLE_SETBACK_OFFSET_C = 2;
 
 /**
  * UI-only sentinel for "inherit the global setting".  ha-select cannot render an
@@ -22,6 +31,14 @@ const INHERIT = "__inherit__";
 
 const fromInherit = (value: string | undefined): string => (value === INHERIT ? "" : (value ?? ""));
 
+/** Below this own width the dialog shows the device list and one device's settings in turn. */
+const NARROW_PX = 600;
+
+/** `_returnFocus` value: focus the first entry of the device list (after a removal). */
+const LIST_FOCUS = "\u0000list";
+
+type IdleAction = NonNullable<DeviceConfig["idle_action"]>;
+
 @customElement("rs-device-section")
 export class RsDeviceSection extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -30,6 +47,7 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public selectedTempSensor = "";
   @property({ type: String }) public dehumidifierEntity = "";
   @property({ type: String }) public dehumidifierTankSensor = "";
+  /** null = automatic (the device's minimum), 0 = leave unchanged, n = fixed value. */
   @property({ attribute: false }) public dehumidifierDeviceTarget: number | null = null;
   @property({ attribute: false }) public valveProtectionExclude: Set<string> = new Set();
   @property({ type: Boolean }) public valveProtectionEnabled = false;
@@ -39,12 +57,39 @@ export class RsDeviceSection extends LitElement {
   @property({ type: String }) public coilDryFanModeGlobal = "low";
 
   @property({ type: Boolean }) public editing = false;
-  @state() private _systemTypeInfoExpanded = false;
+  /** Device the edit view opens with (e.g. the row the user tapped). */
+  @property({ type: String }) public focusEntity = "";
   @state() private _showBoostHint = false;
   @state() private _selectedThermostats: Set<string> = new Set();
   @state() private _selectedCoolingDevices: Set<string> = new Set();
   @state() private _heatingSystemType = "";
   @state() private _selectedForEdit = "";
+  /** Narrow layout: the selected device's settings replace the list. */
+  @state() private _detailOpen = false;
+  @state() private _narrow = false;
+  /** Device whose removal waits for confirmation. */
+  @state() private _confirmRemove = "";
+
+  private _resize?: ResizeObserver;
+  /** Row to focus after going back from a device's settings (narrow layout). */
+  private _returnFocus = "";
+  /** Device just added; focus moves to it once it arrived in `devices`. */
+  private _focusAdded = "";
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._resize = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      const narrow = width > 0 && width < NARROW_PX;
+      if (narrow !== this._narrow) this._narrow = narrow;
+    });
+    this._resize.observe(this);
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._resize?.disconnect();
+  }
 
   protected willUpdate(changed: PropertyValues): void {
     if (changed.has("devices")) {
@@ -61,300 +106,153 @@ export class RsDeviceSection extends LitElement {
       const inRoom = new Set(this.devices.map((d) => d.entity_id));
       if (this._selectedForEdit && !inRoom.has(this._selectedForEdit)) {
         this._selectedForEdit = "";
+        this._detailOpen = false;
       }
       if (!this._selectedForEdit && this.devices.length > 0) {
-        this._selectedForEdit = this.devices[0].entity_id;
+        this._selectedForEdit = this._orderedDevices()[0].entity_id;
       }
+    }
+    if (changed.has("focusEntity") && this.devices.some((d) => d.entity_id === this.focusEntity)) {
+      this._selectedForEdit = this.focusEntity;
+      this._detailOpen = true;
     }
   }
 
+  protected updated(changed: PropertyValues): void {
+    if (!this.editing) return;
+    const root = this.renderRoot;
+    if (this._returnFocus === LIST_FOCUS) {
+      if (changed.has("devices")) {
+        this._returnFocus = "";
+        void this._focusWhenReady(".list rs-list-row, .list ha-entity-picker");
+      }
+      return;
+    }
+    if (this._focusAdded && changed.has("devices")) {
+      // The pressed suggestion is gone: continue at the new device's settings or row
+      const id = this._focusAdded;
+      this._focusAdded = "";
+      void this._focusWhenReady(
+        this._narrow ? ".back" : `rs-list-row[data-eid="${CSS.escape(id)}"]`,
+      );
+      return;
+    }
+    // Only a switch the user made moves the focus; opening the dialog leaves it to the dialog
+    if (!this._narrow || changed.get("_detailOpen") === undefined) return;
+    if (this._detailOpen) {
+      root.querySelector<HTMLElement>(".back")?.focus();
+    } else if (this._returnFocus) {
+      const selector = `rs-list-row[data-eid="${CSS.escape(this._returnFocus)}"]`;
+      this._returnFocus = "";
+      void this._focusWhenReady(selector);
+    }
+  }
+
+  /** Focus after the element rendered its own content (ha-button focuses an inner button). */
+  private async _focusWhenReady(selector: string) {
+    const el = this.renderRoot.querySelector<HTMLElement & { updateComplete?: Promise<unknown> }>(
+      selector,
+    );
+    await el?.updateComplete;
+    el?.focus();
+  }
+
   static styles = [
-    masterDetailStyles,
+    tokens,
     inputStyles,
+    formStyles,
     css`
       :host {
         display: block;
       }
 
-      .section-subtitle {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        margin: 12px 0 8px 0;
-        text-transform: uppercase;
-        letter-spacing: 0.4px;
+      .md {
+        display: grid;
+        grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+        gap: var(--rs-space-5);
+        align-items: start;
       }
 
-      .section-subtitle:first-child {
+      .md.single {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--rs-space-1);
+        min-width: 0;
+        --rs-list-row-padding: var(--rs-space-3);
+      }
+
+      /* rows reach past the column so their text lines up with the titles */
+      .list rs-list-row {
+        margin-inline: calc(-1 * var(--rs-space-3));
+      }
+
+      .list .group-title {
+        margin: var(--rs-space-3) 0 var(--rs-space-1);
+      }
+
+      .list .group-title:first-child {
         margin-top: 0;
       }
 
-      .device-group {
-        padding: 4px 0;
+      .list ha-entity-picker {
+        margin-top: var(--rs-space-3);
       }
 
-      .device-group + .device-group {
-        margin-top: 8px;
-        padding-top: 12px;
-        border-top: 1px solid var(--divider-color, #eee);
-      }
-
-      .device-list-scroll {
-        max-height: 168px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        scrollbar-width: thin;
-      }
-
-      /* Device rows */
-      .device-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 8px 14px;
-        font-size: 14px;
-        color: var(--primary-text-color);
-        border-radius: 10px;
-        margin-bottom: 2px;
-        transition: background 0.15s;
-      }
-
-      .device-row:last-child {
-        margin-bottom: 0;
-      }
-
-      .device-row:hover {
-        background: rgba(0, 0, 0, 0.02);
-      }
-
-      .device-row.selected {
-        background: rgba(3, 169, 244, 0.035);
-      }
-
-      .device-row ha-checkbox,
-      .device-row ha-radio {
-        flex-shrink: 0;
-      }
-
-      .device-info {
-        flex: 1;
+      .detail {
+        --rs-form-inline: var(--rs-space-4);
         min-width: 0;
       }
 
-      .device-name-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
+      .detail.box {
+        padding: var(--rs-space-2) var(--rs-space-4) var(--rs-space-4);
+        border: 1px solid var(--rs-border);
+        border-radius: var(--rs-radius);
       }
 
-      .device-name {
-        font-size: 14px;
-        font-weight: 450;
-        color: var(--primary-text-color);
+      .detail.flat {
+        --rs-form-inline: var(--rs-space-6);
       }
 
-      .device-value {
-        margin-left: auto;
-        font-size: 14px;
-        font-weight: 500;
-        color: var(--primary-text-color);
-        flex-shrink: 0;
+      .detail-head {
+        margin: 0 calc(-1 * var(--rs-form-inline)) var(--rs-space-3);
+        --rs-list-row-padding: var(--rs-form-inline);
       }
 
-      .device-entity {
-        font-family: var(--code-font-family, monospace);
-        font-size: 11px;
-        color: var(--secondary-text-color);
-        margin-top: 2px;
-        opacity: 0.7;
-      }
-
-      .external-badge {
+      .back {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        font-size: 10px;
-        font-weight: 500;
-        color: var(--warning-color, #ff9800);
-        background: rgba(255, 152, 0, 0.1);
-        padding: 2px 8px;
-        border-radius: 10px;
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-        flex-shrink: 0;
-      }
-
-      .device-type-select {
-        flex-shrink: 0;
-        --ha-select-min-width: 90px;
-      }
-
-      .no-devices {
-        color: var(--secondary-text-color);
-        font-size: 13px;
-        font-style: italic;
-        padding: 12px 14px;
-      }
-
-      .entity-picker-wrap {
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid var(--divider-color, #eee);
-      }
-
-      .subtitle-row {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-
-      .info-icon {
-        --mdc-icon-size: 16px;
-        color: var(--secondary-text-color);
-        cursor: pointer;
-        opacity: 0.6;
-      }
-      .info-icon:hover,
-      .info-icon.info-active {
-        opacity: 1;
+        gap: var(--rs-space-2);
+        min-height: var(--rs-touch);
+        margin: calc(-1 * var(--rs-space-2)) 0 var(--rs-space-2) calc(-1 * var(--rs-space-2));
+        padding: 0 var(--rs-space-3) 0 var(--rs-space-2);
+        border: none;
+        border-radius: var(--rs-radius-sm);
+        background: none;
         color: var(--primary-color);
-      }
-
-      .system-type-info {
-        font-size: 12px;
-        line-height: 1.5;
-        color: var(--secondary-text-color);
-        padding: 8px 14px 4px;
-      }
-
-      .dehum-field {
-        margin-top: 12px;
-      }
-
-      .dehum-field ha-entity-picker {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .boost-hint {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        margin-top: 8px;
-        padding: 8px 12px;
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.08);
-        border-radius: 8px;
-        font-size: 13px;
-        color: var(--primary-text-color);
-        line-height: 1.4;
-        --mdc-icon-size: 18px;
-      }
-      .boost-hint ha-icon {
-        color: var(--primary-color);
-        flex-shrink: 0;
-        margin-top: 1px;
-      }
-
-      .idle-action-row {
-        display: flex;
-        gap: 12px;
-        padding: 4px 14px 4px 42px;
-      }
-
-      .idle-action-row ha-select {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .setpoint-mode-row {
-        display: flex;
-        gap: 12px;
-        padding: 4px 14px 4px 42px;
-      }
-
-      .setpoint-mode-row ha-select {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .setpoint-mode-hint {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        padding: 2px 14px 4px 42px;
-      }
-
-      .valve-exclude-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 2px 14px 2px 42px;
-        font-size: 12px;
-        color: var(--secondary-text-color);
-      }
-
-      .valve-exclude-row ha-icon {
-        --mdc-icon-size: 14px;
-        color: var(--secondary-text-color);
-      }
-
-      .valve-exclude-row ha-checkbox {
-        --mdc-checkbox-unchecked-color: var(--secondary-text-color);
-        margin: -8px -4px -8px -8px;
-      }
-
-      .valve-exclude-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-        font-size: 10px;
+        font: inherit;
+        font-size: var(--rs-font-md);
         font-weight: 500;
-        color: var(--secondary-text-color);
-        background: var(--secondary-background-color);
-        padding: 2px 6px;
-        border-radius: 8px;
-        --mdc-icon-size: 12px;
-      }
-
-      .detail-section-label {
-        font-size: 11px;
-        font-weight: 500;
-        color: var(--secondary-text-color);
-        text-transform: uppercase;
-        letter-spacing: 0.4px;
-        padding: 10px 0 4px 0;
-        border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
-        margin-top: 4px;
-      }
-
-      /* View mode styles */
-      .view-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 8px 14px;
-        font-size: 14px;
-        color: var(--primary-text-color);
-      }
-
-      .view-name {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .entity-link {
         cursor: pointer;
+        --mdc-icon-size: 20px;
       }
 
-      .entity-link:hover {
-        text-decoration: underline;
+      .back:hover {
+        background: var(--rs-fill-primary);
       }
 
-      .view-value {
-        font-weight: 500;
-        flex-shrink: 0;
+      .back:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 1px;
+      }
+
+      .room-section {
+        margin-top: var(--rs-space-6);
+        padding-top: var(--rs-space-5);
+        border-top: 1px solid var(--rs-border);
       }
     `,
   ];
@@ -367,88 +265,383 @@ export class RsDeviceSection extends LitElement {
   }
 
   private _renderViewMode() {
-    const hasClimate = this._selectedThermostats.size > 0 || this._selectedCoolingDevices.size > 0;
-
+    const l = this.hass.language;
+    const ordered = [
+      ...this.devices.filter((d) => d.type === "trv"),
+      ...this.devices.filter((d) => d.type !== "trv"),
+    ];
     return html`
+      ${ordered.map((d) => this._renderViewRow(d))}
+      ${this.dehumidifierEntity ? this._renderDehumidifierViewRow() : nothing}
+      <rs-list-row
+        clickable
+        plain-icon
+        variant="primary"
+        icon="mdi:plus"
+        .heading=${localize("detail.devices.add", l)}
+        .secondary=${ordered.length ? "" : localize("detail.devices.none_hint", l)}
+        ?wrap=${!ordered.length}
+        @row-click=${(e: Event) => this._fireEdit(e)}
+      ></rs-list-row>
+    `;
+  }
+
+  /** "Thermostat · Heizkörper · Absenkung · Direktes Ventil": type and what is set apart. */
+  private _deviceSummary(device: DeviceConfig): string {
+    const l = this.hass.language;
+    const parts: string[] = [localize(device.type === "trv" ? "card.thermostat" : "card.ac", l)];
+    if (device.type === "trv" && this._heatingSystemType) {
+      parts.push(
+        this._heatingSystemType === "radiator"
+          ? localize("devices.system_type_radiator", l)
+          : this._heatingSystemType === "underfloor"
+            ? localize("devices.system_type_underfloor", l)
+            : this._heatingSystemType,
+      );
+    }
+    if (device.idle_action === "fan_only") {
+      parts.push(
+        localize("devices.idle_action_fan_only", l) +
+          (device.idle_fan_mode ? ` (${device.idle_fan_mode})` : ""),
+      );
+    } else if (device.idle_action === "low") {
+      parts.push(localize("devices.idle_action_low", l));
+    } else if (device.idle_action === "setback") {
+      parts.push(localize("devices.idle_action_setback", l));
+    }
+    const hasValve =
+      device.type === "trv" && !!device.valve_opening_entity && !!device.valve_closing_entity;
+    if (device.setpoint_mode === "direct" && this.selectedTempSensor && !hasValve) {
+      parts.push(localize("devices.setpoint_mode_direct", l));
+    }
+    if (hasValve && this.selectedTempSensor) parts.push(localize("devices.valve_direct_badge", l));
+    if (this.valveProtectionEnabled && this.valveProtectionExclude.has(device.entity_id)) {
+      parts.push(localize("devices.valve_protection_excluded", l));
+    }
+    return parts.join(" · ");
+  }
+
+  private _renderViewRow(device: DeviceConfig) {
+    const l = this.hass.language;
+    const entityId = device.entity_id;
+    const entityState = this.hass.states[entityId];
+    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
+    const attrs = entityState?.attributes ?? {};
+    const action = attrs.hvac_action as string | undefined;
+    const unavailable = !entityState || entityState.state === "unavailable";
+
+    let status = "";
+    let color = "";
+    if (unavailable) status = localize("detail.devices.unavailable", l);
+    else if (action === "heating" || action === "preheating") {
+      status = localize("card.state.heating", l);
+      color = "var(--rs-heat)";
+    } else if (action === "cooling") {
+      status = localize("card.state.cooling", l);
+      color = "var(--rs-cool)";
+    } else if (entityState.state === "off") status = localize("card.state.off", l);
+    const ct = attrs.current_temperature;
+    // Device readings are already in Home Assistant's unit.
+    const temp =
+      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)}\u00a0${tempUnit(this.hass)}` : "";
+    const value = [status, temp].filter(Boolean).join(" · ");
+
+    return html`<rs-list-row
+      clickable
+      chevron
+      .icon=${device.type === "trv" ? "mdi:thermostat" : "mdi:air-conditioner"}
+      .iconColor=${color}
+      icon-label=${localize("detail.more_info", l)}
+      .heading=${friendlyName}
+      .secondary=${this._deviceSummary(device)}
+      .value=${value}
+      @row-click=${(e: Event) => this._fireEdit(e, entityId)}
+      @icon-click=${() => openEntityInfo(this, entityId)}
+    ></rs-list-row>`;
+  }
+
+  private _fireEdit(e: Event, entityId?: string) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("edit-click", { detail: { entityId }, bubbles: true, composed: true }),
+    );
+  }
+
+  /** TRVs first, then ACs, each in stored order (as on the room page). */
+  private _orderedDevices(): DeviceConfig[] {
+    return [
+      ...this.devices.filter((d) => d.type === "trv"),
+      ...this.devices.filter((d) => d.type !== "trv"),
+    ];
+  }
+
+  private _name(entityId: string): string {
+    return (this.hass.states[entityId]?.attributes?.friendly_name as string) || entityId;
+  }
+
+  /** What the device does right now and its own reading, for list rows and the detail head. */
+  private _liveStatus(
+    entityId: string,
+    withMode: boolean,
+  ): { text: string; color: string; temp: string } {
+    const l = this.hass.language;
+    const st = this.hass.states[entityId];
+    if (!st || st.state === "unavailable") {
+      return { text: localize("detail.devices.unavailable", l), color: "", temp: "" };
+    }
+    const action = st.attributes?.hvac_action as string | undefined;
+    let text = "";
+    let color = "";
+    if (action === "heating" || action === "preheating") {
+      text = localize("card.state.heating", l);
+      color = "var(--rs-heat)";
+    } else if (action === "cooling") {
+      text = localize("card.state.cooling", l);
+      color = "var(--rs-cool)";
+    } else if (st.state === "off") {
+      text = localize("card.state.off", l);
+    } else if (withMode) {
+      text = localize("detail.devices.mode", l, {
+        mode: this.hass.formatEntityState?.(st) ?? st.state,
+      });
+    }
+    const ct = st.attributes?.current_temperature;
+    // Device readings are already in Home Assistant's unit.
+    const temp =
+      typeof ct === "number" ? `${formatNumber(ct, this.hass, 1)}\u00a0${tempUnit(this.hass)}` : "";
+    return { text, color, temp };
+  }
+
+  /** Climate entities of the area (RoomMind's own excluded). */
+  private _areaClimateIds(): string[] {
+    return getEntitiesForArea(this.area.area_id, this.hass?.entities, this.hass?.devices)
+      .map((e) => e.entity_id)
+      .filter((id) => id.startsWith("climate.") && !id.startsWith("climate.roommind_"));
+  }
+
+  private _renderEditMode() {
+    const device = this.devices.find((d) => d.entity_id === this._selectedForEdit);
+    if (this._narrow) {
+      if (this._detailOpen && device) {
+        return html`<button type="button" class="back" @click=${this._onBack}>
+            <ha-icon icon="mdi:arrow-left" aria-hidden="true"></ha-icon>
+            ${localize("detail.devices.back", this.hass.language)}
+          </button>
+          <div class="detail flat">${this._renderDeviceDetail(device)}</div>`;
+      }
+      return html`${this._renderList()} ${this._renderRoomSection()}
+      ${this._renderDehumidifierSection()}`;
+    }
+    return html`
+      <div class="md ${device ? "" : "single"}">
+        ${this._renderList()}
+        ${device ? html`<div class="detail box">${this._renderDeviceDetail(device)}</div>` : nothing}
+      </div>
+      ${this._renderRoomSection()} ${this._renderDehumidifierSection()}
+    `;
+  }
+
+  private _renderList() {
+    const l = this.hass.language;
+    const inRoom = new Set(this.devices.map((d) => d.entity_id));
+    const suggestions = this._areaClimateIds().filter((id) => !inRoom.has(id));
+    return html`<div class="list">
       ${
-        hasClimate
-          ? html`
-              <div class="device-group">
-                <div class="section-subtitle">
-                  ${localize("devices.climate_entities", this.hass.language)}
-                </div>
-                ${[...this._selectedThermostats].map((id) => this._renderViewRow(id, "climate"))}
-                ${[...this._selectedCoolingDevices].map((id) => this._renderViewRow(id, "climate"))}
-              </div>
-            `
+        this.devices.length
+          ? html`<h4 class="group-title">${localize("detail.devices.in_room", l)}</h4>
+              ${this._orderedDevices().map((d) => this._renderListRow(d))}`
           : nothing
       }
+      ${
+        suggestions.length
+          ? html`<h4 class="group-title">${localize("detail.devices.in_area", l)}</h4>
+              ${suggestions.map((id) => this._renderSuggestion(id))}`
+          : nothing
+      }
+      ${
+        !this.devices.length && !suggestions.length
+          ? html`<p class="note">${localize("devices.no_climate", l)}</p>`
+          : nothing
+      }
+      <ha-entity-picker
+        .hass=${this.hass}
+        .includeDomains=${["climate"]}
+        .entityFilter=${this._entityFilter}
+        .value=${""}
+        .label=${localize("detail.devices.add", l)}
+        @value-changed=${this._onEntityPicked}
+      ></ha-entity-picker>
+    </div>`;
+  }
+
+  private _renderListRow(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    const status = this._liveStatus(id, false);
+    const external = !this._areaClimateIds().includes(id);
+    const secondary = [
+      localize(device.type === "trv" ? "devices.type_thermostat" : "devices.type_ac", l),
+      status.text,
+      external ? localize("devices.other_area", l) : "",
+    ].filter(Boolean);
+    return html`<rs-list-row
+      clickable
+      data-eid=${id}
+      .chevron=${this._narrow}
+      .selected=${!this._narrow && id === this._selectedForEdit}
+      .icon=${device.type === "trv" ? "mdi:thermostat" : "mdi:air-conditioner"}
+      .iconColor=${status.color}
+      .heading=${this._name(id)}
+      .secondary=${secondary.join(" · ")}
+      .value=${status.temp}
+      @row-click=${() => this._openDetail(id)}
+    ></rs-list-row>`;
+  }
+
+  private _renderSuggestion(entityId: string) {
+    const l = this.hass.language;
+    return html`<rs-list-row
+      clickable
+      plain-icon
+      icon="mdi:plus"
+      .heading=${this._name(entityId)}
+      .secondary=${localize("detail.devices.add_suggestion", l)}
+      .value=${this._liveStatus(entityId, false).temp}
+      @row-click=${() => this._addDevice(entityId)}
+    ></rs-list-row>`;
+  }
+
+  /** Heating system type: one value for all TRVs of the room. */
+  private _renderRoomSection() {
+    if (this._selectedThermostats.size === 0) return nothing;
+    const l = this.hass.language;
+    return html`<section class="room-section group">
+      <h4 class="group-title">
+        ${localize("devices.heating_system_type", l)}
+        <rs-info-icon .text=${localize("devices.heating_system_type_info", l)}></rs-info-icon>
+      </h4>
+      <p class="note">${localize("devices.heating_system_type_scope", l)}</p>
+      <rs-segmented
+        wrap
+        .label=${localize("devices.heating_system_type", l)}
+        .options=${[
+          { value: "", label: localize("devices.system_type_none", l) },
+          { value: "radiator", label: localize("devices.system_type_radiator", l) },
+          { value: "underfloor", label: localize("devices.system_type_underfloor", l) },
+        ]}
+        .value=${this._heatingSystemType}
+        @value-changed=${(e: CustomEvent<{ value: string }>) => {
+          e.stopPropagation();
+          this._onHeatingSystemTypeChange(e.detail.value);
+        }}
+      ></rs-segmented>
+      ${
+        this._showBoostHint
+          ? html`<p class="note">${localize("devices.heating_system_type_boost_hint", l)}</p>`
+          : nothing
+      }
+    </section>`;
+  }
+
+  /* ---------- Dehumidifier (one per room, humidifier entity or its power switch) ---------- */
+
+  private _renderDehumidifierViewRow() {
+    const l = this.hass.language;
+    const id = this.dehumidifierEntity;
+    const st = this.hass.states[id];
+    const parts: string[] = [localize("dehumidifier.title", l)];
+    if (this.dehumidifierTankSensor) {
+      const tank = this.hass.states[this.dehumidifierTankSensor]?.state;
+      if (tank === "on" || tank === "off") {
+        parts.push(
+          `${localize("dehumidifier.tank_sensor", l)}: ${localize(
+            tank === "on" ? "dehumidifier.tank_full" : "dehumidifier.tank_ok",
+            l,
+          )}`,
+        );
+      }
+    }
+    if (id.startsWith("humidifier.")) {
+      parts.push(`${localize("dehumidifier.device_target", l)}: ${this._deviceTargetLabel()}`);
+    }
+    const unavailable = !st || st.state === "unavailable";
+    const value = unavailable
+      ? localize("detail.devices.unavailable", l)
+      : st.state === "on"
+        ? localize("common.on", l)
+        : st.state === "off"
+          ? localize("common.off", l)
+          : st.state;
+    return html`<rs-list-row
+      clickable
+      chevron
+      icon=${st?.state === "on" ? "mdi:air-humidifier" : "mdi:air-humidifier-off"}
+      icon-label=${localize("detail.more_info", l)}
+      .heading=${this._name(id)}
+      .secondary=${parts.join(" · ")}
+      .value=${value}
+      @row-click=${(e: Event) => this._fireEdit(e)}
+      @icon-click=${() => openEntityInfo(this, id)}
+    ></rs-list-row>`;
+  }
+
+  private _renderDehumidifierSection() {
+    const l = this.hass.language;
+    return html`<section class="room-section group">
+      <h4 class="group-title">${localize("dehumidifier.title", l)}</h4>
+      <ha-entity-picker
+        .hass=${this.hass}
+        .includeDomains=${["switch", "humidifier"]}
+        .entityFilter=${this._dehumidifierFilter}
+        .value=${this.dehumidifierEntity}
+        .allowCustomEntity=${false}
+        .label=${localize("dehumidifier.entity", l)}
+        @value-changed=${this._onDehumidifierPicked}
+      ></ha-entity-picker>
       ${
         this.dehumidifierEntity
           ? html`
-              <div class="device-group">
-                <div class="section-subtitle">
-                  ${localize("dehumidifier.title", this.hass.language)}
-                </div>
-                ${this._renderViewRow(this.dehumidifierEntity, "dehumidifier")}
-                ${
-                  this.dehumidifierTankSensor
-                    ? this._renderViewRow(this.dehumidifierTankSensor, "tank")
-                    : nothing
-                }
-                ${
-                  this.dehumidifierEntity.startsWith("humidifier.")
-                    ? html`<div class="view-row">
-                        <span class="view-name"
-                          >${localize("dehumidifier.device_target", this.hass.language)}</span
-                        >
-                        <span class="view-value">${this._deviceTargetLabel()}</span>
-                      </div>`
-                    : nothing
-                }
-              </div>
+              <rs-field .info=${localize("dehumidifier.tank_sensor_hint", l)}>
+                <ha-entity-picker
+                  .hass=${this.hass}
+                  .includeDomains=${["binary_sensor"]}
+                  .value=${this.dehumidifierTankSensor}
+                  .label=${localize("dehumidifier.tank_sensor", l)}
+                  @value-changed=${this._onTankSensorPicked}
+                ></ha-entity-picker>
+              </rs-field>
+              ${this.dehumidifierEntity.startsWith("humidifier.") ? this._renderDeviceTargetEdit() : nothing}
             `
           : nothing
       }
-      ${
-        this._heatingSystemType
-          ? html`
-              <div class="device-group">
-                <div class="section-subtitle">
-                  ${localize("devices.heating_system_type", this.hass.language)}
-                </div>
-                <div class="view-row">
-                  <span class="view-name"
-                    >${
-                      this._heatingSystemType === "radiator"
-                        ? localize("devices.system_type_radiator", this.hass.language)
-                        : this._heatingSystemType === "underfloor"
-                          ? localize("devices.system_type_underfloor", this.hass.language)
-                          : this._heatingSystemType
-                    }</span
-                  >
-                </div>
-              </div>
-            `
-          : nothing
-      }
-    `;
+    </section>`;
   }
 
   private _dehumidifierFilter = (entity: { entity_id: string }): boolean =>
     !entity.entity_id.split(".")[1]?.startsWith("roommind_");
 
-  private _onDehumidifierPicked(e: CustomEvent<{ value?: string }>) {
-    e.stopPropagation();
-    const value = e.detail.value ?? "";
-    if (value === this.dehumidifierEntity) return;
+  private _emitDehumidifier(key: string, value: unknown) {
     this.dispatchEvent(
       new CustomEvent("dehumidifier-changed", {
-        detail: { key: "dehumidifier_entity", value },
+        detail: { key, value },
         bubbles: true,
         composed: true,
       }),
     );
+  }
+
+  private _onDehumidifierPicked(e: CustomEvent<{ value?: string }>) {
+    e.stopPropagation();
+    const value = e.detail.value ?? "";
+    if (value !== this.dehumidifierEntity) this._emitDehumidifier("dehumidifier_entity", value);
+  }
+
+  private _onTankSensorPicked(e: CustomEvent<{ value?: string }>) {
+    e.stopPropagation();
+    const value = e.detail.value ?? "";
+    if (value !== this.dehumidifierTankSensor) {
+      this._emitDehumidifier("dehumidifier_tank_sensor", value);
+    }
   }
 
   /** The device's reported humidity range, used for "automatic" and to bound a fixed value. */
@@ -462,937 +655,561 @@ export class RsDeviceSection extends LitElement {
     };
   }
 
-  /** null = automatic (the device's minimum), 0 = leave unchanged, n = fixed value. */
   private _deviceTargetMode(): "auto" | "fixed" | "keep" {
     if (this.dehumidifierDeviceTarget == null) return "auto";
     return this.dehumidifierDeviceTarget === 0 ? "keep" : "fixed";
   }
 
   private _deviceTargetLabel(): string {
-    const lang = this.hass.language;
+    const l = this.hass.language;
     const mode = this._deviceTargetMode();
-    if (mode === "keep") return localize("dehumidifier.device_target_keep", lang);
-    if (mode === "fixed") return `${this.dehumidifierDeviceTarget}%`;
-    return localize("dehumidifier.device_target_auto", lang, {
+    if (mode === "keep") return localize("dehumidifier.device_target_keep", l);
+    if (mode === "fixed") return `${this.dehumidifierDeviceTarget}\u00a0%`;
+    return localize("dehumidifier.device_target_auto", l, {
       value: this._deviceHumidityRange().min,
     });
   }
 
-  private _emitDeviceTarget(value: number | "") {
-    this.dispatchEvent(
-      new CustomEvent("dehumidifier-changed", {
-        detail: { key: "dehumidifier_device_target", value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
   private _onDeviceTargetModeChange(mode: string) {
     if (mode === this._deviceTargetMode()) return;
-    if (mode === "auto") this._emitDeviceTarget("");
-    else if (mode === "keep") this._emitDeviceTarget(0);
-    else if (mode === "fixed") this._emitDeviceTarget(this._deviceHumidityRange().min);
-  }
-
-  private _onDeviceTargetValueChange(e: Event) {
-    const v = parseInt((e.target as HTMLInputElement).value, 10);
-    const { min, max } = this._deviceHumidityRange();
-    if (!isNaN(v) && v >= min && v <= max) this._emitDeviceTarget(v);
+    if (mode === "auto") this._emitDehumidifier("dehumidifier_device_target", "");
+    else if (mode === "keep") this._emitDehumidifier("dehumidifier_device_target", 0);
+    else if (mode === "fixed") {
+      this._emitDehumidifier("dehumidifier_device_target", this._deviceHumidityRange().min);
+    }
   }
 
   private _renderDeviceTargetEdit() {
-    const lang = this.hass.language;
+    const l = this.hass.language;
     const mode = this._deviceTargetMode();
     const { min, max } = this._deviceHumidityRange();
-    const autoLabel = localize("dehumidifier.device_target_auto", lang, { value: min });
     return html`
-      <div class="detail-field with-info dehum-field">
-        <ha-select
-          .label=${localize("dehumidifier.device_target", lang)}
-          .value=${mode}
-          .options=${[
-            { value: "auto", label: autoLabel },
-            { value: "fixed", label: localize("dehumidifier.device_target_fixed", lang) },
-            { value: "keep", label: localize("dehumidifier.device_target_keep", lang) },
-          ]}
-          @selected=${(e: Event) => this._onDeviceTargetModeChange(getSelectValue(e))}
-          @closed=${(e: Event) => e.stopPropagation()}
-          fixedMenuPosition
-        >
-          <ha-list-item value="auto">${autoLabel}</ha-list-item>
-          <ha-list-item value="fixed"
-            >${localize("dehumidifier.device_target_fixed", lang)}</ha-list-item
-          >
-          <ha-list-item value="keep"
-            >${localize("dehumidifier.device_target_keep", lang)}</ha-list-item
-          >
-        </ha-select>
-        <rs-info-icon .text=${localize("dehumidifier.device_target_hint", lang)}></rs-info-icon>
-      </div>
+      <rs-field
+        .label=${localize("dehumidifier.device_target", l)}
+        .info=${localize("dehumidifier.device_target_hint", l)}
+      >
+        ${this._choice(
+          localize("dehumidifier.device_target", l),
+          [
+            {
+              value: "auto",
+              label: localize("dehumidifier.device_target_auto", l, { value: min }),
+            },
+            { value: "fixed", label: localize("dehumidifier.device_target_fixed", l) },
+            { value: "keep", label: localize("dehumidifier.device_target_keep", l) },
+          ],
+          mode,
+          (v) => this._onDeviceTargetModeChange(v),
+        )}
+      </rs-field>
       ${
         mode === "fixed"
-          ? html`<div class="detail-field with-info dehum-field">
-              <ha-textfield
-                type="number"
-                step="1"
-                .min=${String(min)}
-                .max=${String(max)}
-                suffix="%"
-                .label=${localize("dehumidifier.device_target_fixed", lang)}
-                .value=${String(this.dehumidifierDeviceTarget)}
-                @change=${this._onDeviceTargetValueChange}
-              ></ha-textfield>
-              <rs-info-icon
-                .text=${localize("dehumidifier.device_target_value", lang, { min, max })}
-              ></rs-info-icon>
-            </div>`
+          ? html`<rs-number-field
+              .label=${localize("dehumidifier.device_target_fixed", l)}
+              .info=${localize("dehumidifier.device_target_value", l, { min, max })}
+              suffix="%"
+              .min=${min}
+              .max=${max}
+              .step=${1}
+              .value=${this.dehumidifierDeviceTarget}
+              @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                this._emitDehumidifier("dehumidifier_device_target", e.detail.value)}
+            ></rs-number-field>`
           : nothing
       }
     `;
   }
 
-  private _onTankSensorPicked(e: CustomEvent<{ value?: string }>) {
-    e.stopPropagation();
-    const value = e.detail.value ?? "";
-    if (value === this.dehumidifierTankSensor) return;
-    this.dispatchEvent(
-      new CustomEvent("dehumidifier-changed", {
-        detail: { key: "dehumidifier_tank_sensor", value },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private _renderViewRow(
-    entityId: string,
-    type: "climate" | "temp" | "humidity" | "dehumidifier" | "tank",
+  /** Segmented choice with the stored value kept visible even when it is not offered. */
+  private _choice(
+    label: string,
+    options: RsSegmentOption[],
+    value: string,
+    onPick: (value: string) => void,
+    extra?: RsSegmentOption,
   ) {
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const state = entityState?.state;
-    const attrs = entityState?.attributes ?? {};
+    const opts = extra && !options.some((o) => o.value === value) ? [...options, extra] : options;
+    return html`<rs-segmented
+      wrap
+      .label=${label}
+      .options=${opts}
+      .value=${value}
+      @value-changed=${(e: CustomEvent<{ value: string }>) => {
+        e.stopPropagation();
+        onPick(e.detail.value);
+      }}
+    ></rs-segmented>`;
+  }
 
-    let displayValue = "";
-    if (type === "dehumidifier") {
-      displayValue = state ?? "";
-    } else if (type === "tank") {
-      displayValue =
-        state === "on"
-          ? localize("dehumidifier.tank_full", this.hass.language)
-          : state === "off"
-            ? localize("dehumidifier.tank_ok", this.hass.language)
-            : (state ?? "");
-    } else if (type === "climate") {
-      const ct = attrs.current_temperature as number | undefined;
-      if (ct != null) displayValue = `${ct.toFixed(1)}${tempUnit(this.hass)}`;
-    } else if (type === "temp") {
-      const tempVal = entityId.startsWith("climate.") ? attrs.current_temperature : state;
-      if (tempVal != null && tempVal !== "" && tempVal !== "unknown" && tempVal !== "unavailable")
-        displayValue = `${Number(tempVal).toFixed(1)}${tempUnit(this.hass)}`;
-    } else {
-      if (state && state !== "unknown" && state !== "unavailable")
-        displayValue = `${Math.round(Number(state))}%`;
-    }
-
-    const showExcludeBadge =
-      type === "climate" &&
-      this.valveProtectionEnabled &&
-      this.valveProtectionExclude.has(entityId);
-
-    const device =
-      type === "climate" ? this.devices.find((d) => d.entity_id === entityId) : undefined;
-    const showIdleBadge =
-      device?.idle_action === "fan_only" ||
-      device?.idle_action === "setback" ||
-      device?.idle_action === "low";
-    const hasValve =
-      device?.type === "trv" && !!device?.valve_opening_entity && !!device?.valve_closing_entity;
-    const showDirectBadge =
-      device?.setpoint_mode === "direct" && !!this.selectedTempSensor && !hasValve;
-    const showValveBadge = hasValve && !!this.selectedTempSensor;
+  private _renderDeviceDetail(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    const isTrv = device.type === "trv";
+    const status = this._liveStatus(id, true);
+    const external = !this._areaClimateIds().includes(id);
+    const hasSensor = !!this.selectedTempSensor;
+    const hasValve = isTrv && !!device.valve_opening_entity && !!device.valve_closing_entity;
+    const showValve = this._showValveFields(device);
 
     return html`
-      <div class="view-row">
-        <span class="view-name entity-link" @click=${() => openEntityInfo(this, entityId)}
-          >${friendlyName}</span
-        >
-        ${
-          showIdleBadge
-            ? html`<span class="valve-exclude-badge">
-                ${
-                  device!.idle_action === "fan_only"
-                    ? html`${localize("devices.idle_action_fan_only", this.hass.language)}${
-                        device!.idle_fan_mode ? ` (${device!.idle_fan_mode})` : nothing
-                      }`
-                    : device!.idle_action === "low"
-                      ? localize("devices.idle_action_low", this.hass.language)
-                      : localize("devices.idle_action_setback", this.hass.language)
-                }
-              </span>`
-            : nothing
-        }
-        ${
-          showDirectBadge
-            ? html`<span class="valve-exclude-badge">
-                ${localize("devices.setpoint_mode_direct", this.hass.language)}
-              </span>`
-            : nothing
-        }
-        ${
-          showValveBadge
-            ? html`<span class="valve-exclude-badge">
-                <ha-icon icon="mdi:valve"></ha-icon>
-                ${localize("devices.valve_direct_badge", this.hass.language)}
-              </span>`
-            : nothing
-        }
-        ${
-          showExcludeBadge
-            ? html`<span class="valve-exclude-badge">
-                <ha-icon icon="mdi:shield-off-outline"></ha-icon>
-                ${localize("devices.valve_protection_excluded", this.hass.language)}
-              </span>`
-            : nothing
-        }
-        ${displayValue ? html`<span class="view-value">${displayValue}</span>` : nothing}
+      <rs-list-row
+        class="detail-head"
+        wrap
+        single-line
+        .icon=${isTrv ? "mdi:thermostat" : "mdi:air-conditioner"}
+        .iconColor=${status.color}
+        icon-label=${localize("detail.more_info", l)}
+        .heading=${this._name(id)}
+        .secondary=${[id, external ? localize("devices.other_area", l) : ""]
+          .filter(Boolean)
+          .join(" · ")}
+        .value=${[status.text, status.temp].filter(Boolean).join(" · ")}
+        @icon-click=${() => openEntityInfo(this, id)}
+      ></rs-list-row>
+
+      <div class="group">
+        <h4 class="group-title">
+          ${localize("devices.type_label", l)}
+          <rs-info-icon .text=${localize("devices.type_info", l)}></rs-info-icon>
+        </h4>
+        ${this._choice(
+          localize("devices.type_label", l),
+          [
+            {
+              value: "trv",
+              label: localize("devices.type_thermostat", l),
+              icon: "mdi:thermostat",
+            },
+            { value: "ac", label: localize("devices.type_ac", l), icon: "mdi:air-conditioner" },
+          ],
+          device.type,
+          (v) => this._onDeviceTypeChange(id, v as DeviceType),
+        )}
+        ${hasSensor ? nothing : html`<p class="note">${localize("devices.managed_note", l)}</p>`}
       </div>
+
+      ${hasSensor && !hasValve ? this._renderControlGroup(device) : nothing}
+      ${this._renderIdleGroup(device)}
+      ${isTrv && (showValve || this.valveProtectionEnabled) ? this._renderValveGroup(device) : nothing}
+      ${device.type === "ac" ? this._renderCoilDryGroup(device) : nothing}
+      <div class="group">${this._renderRemove(device)}</div>
     `;
   }
 
-  private _renderEditMode() {
-    const allAreaEntities = getEntitiesForArea(
-      this.area.area_id,
-      this.hass?.entities,
-      this.hass?.devices,
-    ).filter((e) => {
-      const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-      return !idAfterDot.startsWith("roommind_");
-    });
-
-    const areaClimateEntities = allAreaEntities.filter((e) => e.entity_id.startsWith("climate."));
-    const areaClimateIds = new Set(areaClimateEntities.map((e) => e.entity_id));
-    const allSelectedClimate = new Set(this.devices.map((d) => d.entity_id));
-    const externalClimateIds = [...allSelectedClimate].filter((id) => !areaClimateIds.has(id));
-
-    const inRoom = (id: string) => allSelectedClimate.has(id);
-    const detailId = this._selectedForEdit;
-
-    return html`
-      <rs-master-detail>
-        <div slot="master" class="master">
-          <div class="section-subtitle">
-            ${localize("devices.climate_entities", this.hass.language)}
-          </div>
-          <div class="master-list">
-            ${
-              areaClimateEntities.length > 0
-                ? areaClimateEntities.map((e) => this._renderMasterRow(e.entity_id, false))
-                : html`<div class="no-devices">
-                    ${localize("devices.no_climate", this.hass.language)}
-                  </div>`
-            }
-            ${externalClimateIds.map((id) => this._renderMasterRow(id, true))}
-          </div>
-          <div class="entity-picker-wrap">
-            <ha-entity-picker
-              .hass=${this.hass}
-              .includeDomains=${["climate"]}
-              .entityFilter=${this._entityFilter}
-              .value=${""}
-              label=${localize("devices.add_entity", this.hass.language)}
-              @value-changed=${this._onEntityPicked}
-            ></ha-entity-picker>
-          </div>
-        </div>
-
-        <div slot="detail" class="detail-panel">
-          ${
-            detailId && inRoom(detailId)
-              ? this._renderDeviceDetail(detailId)
-              : html`<div class="empty-detail">
-                  <ha-icon icon="mdi:gesture-tap"></ha-icon>
-                  <span>${localize("devices.select_to_configure", this.hass.language)}</span>
-                </div>`
-          }
-        </div>
-      </rs-master-detail>
-      <div class="block-divider"></div>
-      <div class="block">
-        <div class="section-subtitle">${localize("dehumidifier.title", this.hass.language)}</div>
-        <ha-entity-picker
-          .hass=${this.hass}
-          .includeDomains=${["switch", "humidifier"]}
-          .entityFilter=${this._dehumidifierFilter}
-          .value=${this.dehumidifierEntity}
-          .allowCustomEntity=${false}
-          label=${localize("dehumidifier.entity", this.hass.language)}
-          @value-changed=${this._onDehumidifierPicked}
-        ></ha-entity-picker>
-        ${
-          this.dehumidifierEntity
-            ? html`
-                <div class="detail-field with-info dehum-field">
-                  <ha-entity-picker
-                    .hass=${this.hass}
-                    .includeDomains=${["binary_sensor"]}
-                    .value=${this.dehumidifierTankSensor}
-                    label=${localize("dehumidifier.tank_sensor", this.hass.language)}
-                    @value-changed=${this._onTankSensorPicked}
-                  ></ha-entity-picker>
-                  <rs-info-icon
-                    .text=${localize("dehumidifier.tank_sensor_hint", this.hass.language)}
-                  ></rs-info-icon>
-                </div>
-                ${
-                  this.dehumidifierEntity.startsWith("humidifier.")
-                    ? this._renderDeviceTargetEdit()
-                    : nothing
-                }
-              `
-            : nothing
-        }
-      </div>
-
+  private _renderControlGroup(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    return html`<div class="group">
+      <h4 class="group-title">
+        ${localize("devices.setpoint_mode", l)}
+        <rs-info-icon .text=${localize("devices.setpoint_mode_info", l)}></rs-info-icon>
+      </h4>
+      ${this._choice(
+        localize("devices.setpoint_mode", l),
+        [
+          { value: "proportional", label: localize("devices.setpoint_mode_proportional", l) },
+          { value: "direct", label: localize("devices.setpoint_mode_direct", l) },
+        ],
+        device.setpoint_mode ?? "proportional",
+        (v) => this._onSetpointModeChange(id, v),
+      )}
       ${
-        this._selectedThermostats.size > 0
-          ? html`
-              <div class="block-divider"></div>
-              <div class="block">
-                <div class="subtitle-row">
-                  <div class="section-subtitle">
-                    ${localize("devices.heating_system_type", this.hass.language)}
-                  </div>
-                  <ha-icon
-                    class="info-icon ${this._systemTypeInfoExpanded ? "info-active" : ""}"
-                    icon="mdi:information-outline"
-                    @click=${() => {
-                      this._systemTypeInfoExpanded = !this._systemTypeInfoExpanded;
-                    }}
-                  ></ha-icon>
-                </div>
-                ${
-                  this._systemTypeInfoExpanded
-                    ? html`
-                        <div class="system-type-info">
-                          ${localize("devices.heating_system_type_info", this.hass.language)}
-                        </div>
-                      `
-                    : nothing
-                }
-                <ha-select
-                  .value=${this._heatingSystemType || "standard"}
-                  .options=${[
-                    {
-                      value: "standard",
-                      label: localize("devices.system_type_none", this.hass.language),
-                    },
-                    {
-                      value: "radiator",
-                      label: localize("devices.system_type_radiator", this.hass.language),
-                    },
-                    {
-                      value: "underfloor",
-                      label: localize("devices.system_type_underfloor", this.hass.language),
-                    },
-                  ]}
-                  @selected=${this._onHeatingSystemTypeChange}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                  style="width: 100%;"
-                >
-                  <ha-list-item value="standard"
-                    >${localize("devices.system_type_none", this.hass.language)}</ha-list-item
-                  >
-                  <ha-list-item value="radiator"
-                    >${localize("devices.system_type_radiator", this.hass.language)}</ha-list-item
-                  >
-                  <ha-list-item value="underfloor"
-                    >${localize("devices.system_type_underfloor", this.hass.language)}</ha-list-item
-                  >
-                </ha-select>
-                ${
-                  this._showBoostHint
-                    ? html`
-                        <div class="boost-hint">
-                          <ha-icon icon="mdi:information-outline"></ha-icon>
-                          <span
-                            >${localize(
-                              "devices.heating_system_type_boost_hint",
-                              this.hass.language,
-                            )}</span
-                          >
-                        </div>
-                      `
-                    : nothing
-                }
-              </div>
-            `
+        device.setpoint_mode === "direct"
+          ? html`<rs-number-field
+              .hass=${this.hass}
+              kind="temperature-delta"
+              .label=${localize("devices.setpoint_offset", l)}
+              .info=${localize("devices.setpoint_offset_info", l)}
+              .value=${device.setpoint_offset ?? 0}
+              .min=${-5}
+              .max=${5}
+              @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                this._onSetpointOffsetChange(id, e.detail.value)}
+            ></rs-number-field>`
           : nothing
       }
-    `;
+    </div>`;
   }
 
-  private _renderMasterRow(entityId: string, external: boolean) {
-    const isThermostat = this._selectedThermostats.has(entityId);
-    const isAc = this._selectedCoolingDevices.has(entityId);
-    const isInRoom = isThermostat || isAc;
-    const isFocused = this._selectedForEdit === entityId;
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const device = this.devices.find((d) => d.entity_id === entityId);
-    const typeLabel = isThermostat
-      ? localize("devices.type_thermostat", this.hass.language)
-      : isAc
-        ? localize("devices.type_ac", this.hass.language)
-        : "";
-
-    return html`
-      <div
-        class="master-row ${isFocused ? "focused" : ""} ${isInRoom ? "in-room" : ""}"
-        @click=${() => this._onSelectForEdit(entityId)}
-      >
-        <ha-checkbox
-          .checked=${isInRoom}
-          @click=${(e: Event) => e.stopPropagation()}
-          @change=${(e: Event) => {
-            const target = e.target as HTMLElement & { checked: boolean };
-            this._onClimateToggle(entityId, target.checked);
-            if (target.checked) this._selectedForEdit = entityId;
-          }}
-        ></ha-checkbox>
-        <div class="master-info">
-          <div class="master-name-row">
-            <span class="master-name">${friendlyName}</span>
-            ${
-              external
-                ? html`<span class="external-badge"
-                    >${localize("devices.other_area", this.hass.language)}</span
-                  >`
-                : nothing
-            }
-          </div>
-          <div class="master-meta">
-            ${typeLabel ? html`<span class="type-pill">${typeLabel}</span>` : nothing}
-            ${
-              device?.idle_action && device.idle_action !== "off"
-                ? html`<span class="meta-pill"
-                    >${localize(
-                      `devices.idle_action_${device.idle_action}`,
-                      this.hass.language,
-                    )}</span
-                  >`
-                : nothing
-            }
-            ${
-              isAc &&
-              (device?.coil_dry === "on" ||
-                (device?.coil_dry !== "off" && this.coilDryEnabledGlobal))
-                ? html`<span class="meta-pill"
-                    >${localize("devices.coil_dry_summary", this.hass.language)}</span
-                  >`
-                : nothing
-            }
-            ${
-              device?.setpoint_mode === "direct" &&
-              this.selectedTempSensor &&
-              !(device.type === "trv" && device.valve_opening_entity && device.valve_closing_entity)
-                ? html`<span class="meta-pill"
-                    >${localize("devices.setpoint_mode_direct", this.hass.language)}</span
-                  >`
-                : nothing
-            }
-          </div>
-        </div>
-      </div>
-    `;
+  private _renderIdleGroup(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    const isTrv = device.type === "trv";
+    const st = this.hass.states[id];
+    const hvacModes = (st?.attributes?.hvac_modes ?? []) as string[];
+    const fanModes = (st?.attributes?.fan_modes ?? []) as string[];
+    const idle: IdleAction = device.idle_action ?? "off";
+    const option = (value: IdleAction) => ({
+      value,
+      label: localize(`devices.idle_action_${value}`, l),
+    });
+    const options = isTrv
+      ? [option("off"), option("low")]
+      : [
+          option("off"),
+          ...(hvacModes.includes("fan_only") ? [option("fan_only")] : []),
+          option("setback"),
+        ];
+    return html`<div class="group">
+      <h4 class="group-title">
+        ${localize("devices.idle_action", l)}
+        <rs-info-icon
+          .text=${
+            isTrv
+              ? localize("devices.idle_info_trv", l)
+              : localize("devices.idle_info_ac", l, {
+                  delta: `${formatNumber(toDisplayDelta(IDLE_SETBACK_OFFSET_C, this.hass), this.hass)}\u00a0${tempUnit(this.hass)}`,
+                })
+          }
+        ></rs-info-icon>
+      </h4>
+      ${this._choice(
+        localize("devices.idle_action", l),
+        options,
+        idle,
+        (v) => this._onIdleActionChange(id, v),
+        option(idle),
+      )}
+      ${
+        !isTrv && idle === "fan_only"
+          ? html`<rs-field .info=${localize("devices.idle_fan_mode_info", l)}>
+              <ha-select
+                .label=${localize("devices.idle_fan_mode", l)}
+                .value=${device.idle_fan_mode === "" ? "__keep__" : (device.idle_fan_mode ?? "low")}
+                .options=${[
+                  { value: "__keep__", label: localize("devices.idle_fan_mode_keep", l) },
+                  ...fanModes.map((fm) => ({ value: fm, label: this._fanModeLabel(id, fm) })),
+                ]}
+                @selected=${(e: Event) => {
+                  const v = getSelectValue(e);
+                  this._onIdleFanModeChange(id, v === "__keep__" ? "" : v);
+                }}
+                @closed=${(e: Event) => e.stopPropagation()}
+                fixedMenuPosition
+              >
+                <ha-list-item value="__keep__"
+                  >${localize("devices.idle_fan_mode_keep", l)}</ha-list-item
+                >
+                ${fanModes.map(
+                  (fm) =>
+                    html`<ha-list-item value=${fm}>${this._fanModeLabel(id, fm)}</ha-list-item>`,
+                )}
+              </ha-select>
+            </rs-field>`
+          : nothing
+      }
+      ${
+        !isTrv && idle === "setback" && this.selectedTempSensor
+          ? html`<rs-list-row
+              switch
+              wrap
+              .heading=${localize("devices.setback_auto_off", l)}
+              .checked=${device.setback_auto_off ?? false}
+              @toggle-changed=${(e: CustomEvent<boolean>) =>
+                this._onSetbackAutoOffChange(id, e.detail)}
+            >
+              <rs-info-icon
+                slot="end"
+                .text=${localize("devices.setback_auto_off_info", l)}
+              ></rs-info-icon>
+            </rs-list-row>`
+          : nothing
+      }
+    </div>`;
   }
 
-  private _onSelectForEdit(entityId: string) {
-    this._selectedForEdit = entityId;
+  /** Direct valve control needs the room sensor; offered when the TRV has number entities. */
+  private _showValveFields(device: DeviceConfig): boolean {
+    if (device.type !== "trv" || !this.selectedTempSensor) return false;
+    const hasValve = !!device.valve_opening_entity && !!device.valve_closing_entity;
+    return hasValve || this._deviceNumberEntities(device.entity_id).length > 0;
   }
 
-  private _renderDeviceDetail(entityId: string) {
-    const device = this.devices.find((d) => d.entity_id === entityId);
-    if (!device) return nothing;
-
-    const isThermostat = device.type === "trv";
-    const isAc = device.type === "ac";
-    const entityState = this.hass.states[entityId];
-    const friendlyName = (entityState?.attributes?.friendly_name as string) || entityId;
-    const hvacModes = (entityState?.attributes?.hvac_modes ?? []) as string[];
-    const supportsFanOnly = hvacModes.includes("fan_only");
-    const isExcluded = this.valveProtectionExclude.has(entityId);
-    const lang = this.hass.language;
-    const deviceNumbers = isThermostat ? this._deviceNumberEntities(entityId) : [];
-    const hasValve = isThermostat && !!device.valve_opening_entity && !!device.valve_closing_entity;
-    // Direct valve control needs the room sensor (Full Control); offered only when the TRV has number entities
-    const showValveFields =
-      isThermostat && !!this.selectedTempSensor && (deviceNumbers.length > 0 || hasValve);
+  private _renderValveGroup(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    const numbers = this._deviceNumberEntities(id);
+    const hasValve = !!device.valve_opening_entity && !!device.valve_closing_entity;
     // A recognised pair needs no entity picking: one switch, the pickers stay for anything else
-    const valvePair = this._detectValvePair(deviceNumbers);
+    const pair = this._detectValvePair(numbers);
     const idleOpening = device.valve_closing_mode === "idle_opening";
-    const valveAsToggle =
-      !!valvePair &&
+    const asToggle =
+      !!pair &&
       !idleOpening &&
       (!device.valve_opening_entity ||
-        (device.valve_opening_entity === valvePair[0] &&
-          device.valve_closing_entity === valvePair[1]));
+        (device.valve_opening_entity === pair[0] && device.valve_closing_entity === pair[1]));
+    const show = this._showValveFields(device);
+    const picker = (value: string, label: string, onChange: (v: string) => void) =>
+      html`<ha-entity-picker
+        .hass=${this.hass}
+        .includeDomains=${["number"]}
+        .includeEntities=${numbers.length ? numbers : undefined}
+        .value=${value}
+        .label=${label}
+        @value-changed=${(e: CustomEvent) => onChange(e.detail.value as string)}
+      ></ha-entity-picker>`;
 
-    return html`
-      <div class="detail-head">
-        <div class="detail-title">${friendlyName}</div>
-        <div class="detail-entity-id">${entityId}</div>
-      </div>
-
-      <div class="detail-field">
-        <ha-select
-          .label=${localize("devices.type_label", lang) || "Type"}
-          .value=${this._getDeviceDisplayType(entityId)}
-          .options=${[
-            { value: "thermostat", label: localize("devices.type_thermostat", lang) },
-            { value: "ac", label: localize("devices.type_ac", lang) },
-          ]}
-          @selected=${(e: Event) =>
-            this._onDeviceTypeChange(entityId, getSelectValue(e) as "thermostat" | "ac")}
-          @closed=${(e: Event) => e.stopPropagation()}
-          fixedMenuPosition
-        >
-          <ha-list-item value="thermostat"
-            >${localize("devices.type_thermostat", lang)}</ha-list-item
-          >
-          <ha-list-item value="ac">${localize("devices.type_ac", lang)}</ha-list-item>
-        </ha-select>
-      </div>
-
+    return html`<div class="group">
+      <h4 class="group-title">${localize("devices.group_valve", l)}</h4>
       ${
-        isAc
-          ? html`
-              <div class="detail-field">
-                <ha-select
-                  .label=${localize("devices.idle_action", lang)}
-                  .value=${device.idle_action ?? "off"}
-                  .options=${[
-                    { value: "off", label: localize("devices.idle_action_off", lang) },
-                    ...(supportsFanOnly
-                      ? [
-                          {
-                            value: "fan_only",
-                            label: localize("devices.idle_action_fan_only", lang),
-                          },
-                        ]
-                      : []),
-                    { value: "setback", label: localize("devices.idle_action_setback", lang) },
-                  ]}
-                  @selected=${(e: Event) => this._onIdleActionChange(entityId, getSelectValue(e)!)}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                  <ha-list-item value="off"
-                    >${localize("devices.idle_action_off", lang)}</ha-list-item
-                  >
-                  ${
-                    supportsFanOnly
-                      ? html`<ha-list-item value="fan_only"
-                          >${localize("devices.idle_action_fan_only", lang)}</ha-list-item
-                        >`
-                      : nothing
-                  }
-                  <ha-list-item value="setback"
-                    >${localize("devices.idle_action_setback", lang)}</ha-list-item
-                  >
-                </ha-select>
-              </div>
-              ${
-                device.idle_action === "fan_only"
-                  ? html`<div class="detail-field">
-                      <ha-select
-                        .label=${localize("devices.idle_fan_mode", lang)}
-                        .value=${
-                          device.idle_fan_mode === "" ? "__keep__" : (device.idle_fan_mode ?? "low")
-                        }
-                        .options=${[
-                          {
-                            value: "__keep__",
-                            label: localize("devices.idle_fan_mode_keep", lang),
-                          },
-                          ...((entityState?.attributes?.fan_modes ?? []) as string[]).map((fm) => ({
-                            value: fm,
-                            label: fm,
-                          })),
-                        ]}
-                        @selected=${(e: Event) => {
-                          const v = getSelectValue(e);
-                          this._onIdleFanModeChange(entityId, v === "__keep__" ? "" : v);
-                        }}
-                        @closed=${(e: Event) => e.stopPropagation()}
-                        fixedMenuPosition
-                      >
-                        <ha-list-item value="__keep__"
-                          >${localize("devices.idle_fan_mode_keep", lang)}</ha-list-item
-                        >
-                        ${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
-                          (fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`,
-                        )}
-                      </ha-select>
-                    </div>`
-                  : nothing
-              }
-              ${
-                device.idle_action === "setback" && this.selectedTempSensor
-                  ? html`<div class="detail-field">
-                      <rs-toggle-row
-                        .label=${localize("devices.setback_auto_off", lang)}
-                        .hint=${localize("devices.setback_auto_off_hint", lang)}
-                        .checked=${device.setback_auto_off ?? false}
-                        @toggle-changed=${(e: CustomEvent<boolean>) =>
-                          this._onSetbackAutoOffChange(entityId, e.detail)}
-                      ></rs-toggle-row>
-                    </div>`
-                  : nothing
-              }
-
-              <div class="detail-field">
-                <ha-select
-                  .label=${localize("devices.coil_dry", lang)}
-                  .value=${device.coil_dry ?? "inherit"}
-                  .options=${[
-                    { value: "inherit", label: localize("devices.coil_dry_inherit", lang) },
-                    { value: "on", label: localize("devices.coil_dry_on", lang) },
-                    { value: "off", label: localize("devices.coil_dry_off", lang) },
-                  ]}
-                  @selected=${(e: Event) => this._onCoilDryChange(entityId, getSelectValue(e))}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                  <ha-list-item value="inherit"
-                    >${localize("devices.coil_dry_inherit", lang)}</ha-list-item
-                  >
-                  <ha-list-item value="on">${localize("devices.coil_dry_on", lang)}</ha-list-item>
-                  <ha-list-item value="off">${localize("devices.coil_dry_off", lang)}</ha-list-item>
-                </ha-select>
-              </div>
-
-              ${
-                (device.coil_dry ?? "inherit") === "inherit" && !this.coilDryEnabledGlobal
-                  ? html`
-                      <div class="boost-hint">
-                        <ha-icon icon="mdi:information-outline"></ha-icon>
-                        <span>${localize("devices.coil_dry_global_off_hint", lang)}</span>
-                      </div>
-                    `
-                  : nothing
-              }
-              ${
-                (device.coil_dry ?? "inherit") !== "off"
-                  ? html`
-                      <div class="detail-field">
-                        <ha-textfield
-                          .value=${String(device.coil_dry_minutes ?? 0)}
-                          .label=${localize("devices.coil_dry_minutes", lang, {
-                            minutes: this.coilDryMinutesGlobal,
-                          })}
-                          type="number"
-                          step="1"
-                          min="0"
-                          max="60"
-                          @change=${(e: Event) => {
-                            const v = parseInt((e.target as HTMLInputElement).value, 10);
-                            if (!isNaN(v) && v >= 0 && v <= 60)
-                              this._onCoilDryMinutesChange(entityId, v);
-                          }}
-                        ></ha-textfield>
-                      </div>
-
-                      <div class="detail-field with-info">
-                        <ha-select
-                          .label=${localize("devices.coil_dry_mode", lang)}
-                          .value=${device.coil_dry_mode || INHERIT}
-                          .options=${[
-                            {
-                              value: INHERIT,
-                              label: localize("devices.coil_dry_mode_inherit", lang, {
-                                value: this.coilDryModeGlobal,
-                              }),
-                            },
-                            { value: "fan_only", label: "fan_only" },
-                            { value: "dry", label: "dry" },
-                          ]}
-                          @selected=${(e: Event) =>
-                            this._onCoilDryModeChange(entityId, fromInherit(getSelectValue(e)))}
-                          @closed=${(e: Event) => e.stopPropagation()}
-                          fixedMenuPosition
-                        >
-                          <ha-list-item value="${INHERIT}"
-                            >${localize("devices.coil_dry_mode_inherit", lang, {
-                              value: this.coilDryModeGlobal,
-                            })}</ha-list-item
-                          >
-                          <ha-list-item value="fan_only">fan_only</ha-list-item>
-                          <ha-list-item value="dry">dry</ha-list-item>
-                        </ha-select>
-                        ${
-                          device.coil_dry_mode === "dry"
-                            ? html`<rs-info-icon
-                                icon="mdi:alert-outline"
-                                .text=${localize("coil_dry.mode_dry_warning", lang)}
-                              ></rs-info-icon>`
-                            : nothing
-                        }
-                      </div>
-
-                      <div class="detail-field">
-                        <ha-select
-                          .label=${localize("devices.coil_dry_fan_mode", lang)}
-                          .value=${device.coil_dry_fan_mode || INHERIT}
-                          .options=${[
-                            {
-                              value: INHERIT,
-                              label: localize("devices.coil_dry_fan_mode_inherit", lang, {
-                                value: this._globalFanModeLabel(lang),
-                              }),
-                            },
-                            {
-                              value: "__keep__",
-                              label: localize("devices.coil_dry_fan_mode_keep", lang),
-                            },
-                            ...((entityState?.attributes?.fan_modes ?? []) as string[]).map(
-                              (fm) => ({
-                                value: fm,
-                                label: fm,
-                              }),
-                            ),
-                          ]}
-                          @selected=${(e: Event) =>
-                            this._onCoilDryFanModeChange(entityId, fromInherit(getSelectValue(e)))}
-                          @closed=${(e: Event) => e.stopPropagation()}
-                          fixedMenuPosition
-                        >
-                          <ha-list-item value="${INHERIT}"
-                            >${localize("devices.coil_dry_fan_mode_inherit", lang, {
-                              value: this._globalFanModeLabel(lang),
-                            })}</ha-list-item
-                          >
-                          <ha-list-item value="__keep__"
-                            >${localize("devices.coil_dry_fan_mode_keep", lang)}</ha-list-item
-                          >
-                          ${((entityState?.attributes?.fan_modes ?? []) as string[]).map(
-                            (fm) => html`<ha-list-item value="${fm}">${fm}</ha-list-item>`,
-                          )}
-                        </ha-select>
-                      </div>
-                    `
-                  : nothing
-              }
-            `
+        show && asToggle
+          ? html`<rs-list-row
+              switch
+              wrap
+              .heading=${localize("devices.valve_direct_control", l)}
+              .checked=${hasValve}
+              @toggle-changed=${(e: CustomEvent<boolean>) =>
+                this._onValveToggle(id, e.detail ? pair : null)}
+            >
+              <rs-info-icon
+                slot="end"
+                .text=${localize("devices.valve_direct_info", l)}
+              ></rs-info-icon>
+            </rs-list-row>`
           : nothing
       }
       ${
-        isThermostat
-          ? html`
-              <div class="detail-field with-info">
-                <ha-select
-                  .label=${localize("devices.idle_action", lang)}
-                  .value=${device.idle_action ?? "off"}
-                  .options=${[
-                    { value: "off", label: localize("devices.idle_action_off", lang) },
-                    { value: "low", label: localize("devices.idle_action_low", lang) },
-                  ]}
-                  @selected=${(e: Event) => this._onIdleActionChange(entityId, getSelectValue(e)!)}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                  <ha-list-item value="off"
-                    >${localize("devices.idle_action_off", lang)}</ha-list-item
-                  >
-                  <ha-list-item value="low"
-                    >${localize("devices.idle_action_low", lang)}</ha-list-item
-                  >
-                </ha-select>
-                ${
-                  device.idle_action === "low"
-                    ? html`<rs-info-icon
-                        .text=${localize("devices.idle_action_low_hint", lang)}
-                      ></rs-info-icon>`
-                    : nothing
-                }
-              </div>
-            `
-          : nothing
-      }
-      ${
-        this.selectedTempSensor && !hasValve
-          ? html`
-              <div class="detail-field with-info">
-                <ha-select
-                  .label=${localize("devices.setpoint_mode", lang)}
-                  .value=${device.setpoint_mode ?? "proportional"}
-                  .options=${[
-                    {
-                      value: "proportional",
-                      label: localize("devices.setpoint_mode_proportional", lang),
-                    },
-                    {
-                      value: "direct",
-                      label: localize("devices.setpoint_mode_direct", lang),
-                    },
-                  ]}
-                  @selected=${(e: Event) => this._onSetpointModeChange(entityId, getSelectValue(e)!)}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                  fixedMenuPosition
-                >
-                  <ha-list-item value="proportional"
-                    >${localize("devices.setpoint_mode_proportional", lang)}</ha-list-item
-                  >
-                  <ha-list-item value="direct"
-                    >${localize("devices.setpoint_mode_direct", lang)}</ha-list-item
-                  >
-                </ha-select>
-                <rs-info-icon .text=${localize("devices.setpoint_mode_hint", lang)}></rs-info-icon>
-              </div>
-              ${
-                device.setpoint_mode === "direct"
-                  ? html`
-                      <div class="detail-field with-info">
-                        <ha-textfield
-                          .label=${localize("devices.setpoint_offset", lang)}
-                          .suffix=${tempUnit(this.hass)}
-                          .value=${String(
-                            Math.round(
-                              toDisplayDelta(device.setpoint_offset ?? 0, this.hass) * 10,
-                            ) / 10,
-                          )}
-                          type="number"
-                          .step=${usesFahrenheit(this.hass) ? "1" : "0.5"}
-                          .min=${String(Math.round(toDisplayDelta(-5, this.hass)))}
-                          .max=${String(Math.round(toDisplayDelta(5, this.hass)))}
-                          @change=${(e: Event) => {
-                            const v = parseFloat((e.target as HTMLInputElement).value);
-                            if (!isNaN(v)) this._onSetpointOffsetChange(entityId, v);
-                          }}
-                        ></ha-textfield>
-                        <rs-info-icon
-                          .text=${localize("devices.setpoint_offset_hint", lang)}
-                        ></rs-info-icon>
-                      </div>
-                    `
-                  : nothing
-              }
-            `
-          : nothing
-      }
-      ${
-        isThermostat && this.valveProtectionEnabled
-          ? html`
-              <div class="detail-toggle-row">
-                <ha-checkbox
-                  .checked=${isExcluded}
-                  @change=${(e: Event) => {
-                    const target = e.target as HTMLElement & { checked: boolean };
-                    this._onValveProtectionExcludeToggle(entityId, target.checked);
-                  }}
-                ></ha-checkbox>
-                <div class="detail-toggle-label">
-                  <ha-icon icon="mdi:shield-off-outline"></ha-icon>
-                  ${localize("devices.valve_protection_excluded", lang)}
-                  <rs-info-icon
-                    .text=${localize("devices.valve_protection_exclude_hint", lang)}
-                  ></rs-info-icon>
-                </div>
-              </div>
-            `
-          : nothing
-      }
-      ${
-        showValveFields && valveAsToggle
-          ? html`
-              <div class="detail-field">
-                <rs-toggle-row
-                  .label=${localize("devices.valve_direct_control", lang)}
-                  .hint=${localize("devices.valve_direct_control_toggle_hint", lang)}
-                  .checked=${hasValve}
-                  @toggle-changed=${(e: CustomEvent<boolean>) =>
-                    this._onValveToggle(entityId, e.detail ? valvePair : null)}
-                ></rs-toggle-row>
-              </div>
-            `
-          : nothing
-      }
-      ${
-        showValveFields && !valveAsToggle
-          ? html`
-              <div class="detail-section-label">
-                ${localize("devices.valve_direct_control", lang)}
-              </div>
-              <div class="detail-field with-info">
-                <ha-entity-picker
-                  .hass=${this.hass}
-                  .includeDomains=${["number"]}
-                  .includeEntities=${deviceNumbers.length ? deviceNumbers : undefined}
-                  .value=${device.valve_opening_entity ?? ""}
-                  .label=${localize("devices.valve_opening_entity", lang)}
-                  @value-changed=${(e: CustomEvent) =>
-                    this._onValveOpeningChange(entityId, e.detail.value as string, deviceNumbers)}
-                ></ha-entity-picker>
-                <rs-info-icon
-                  .text=${localize("devices.valve_direct_control_hint", lang)}
-                ></rs-info-icon>
-              </div>
-              <div class="detail-field with-info">
-                <ha-entity-picker
-                  .hass=${this.hass}
-                  .includeDomains=${["number"]}
-                  .includeEntities=${deviceNumbers.length ? deviceNumbers : undefined}
-                  .value=${device.valve_closing_entity ?? ""}
-                  .label=${localize(
+        show && !asToggle
+          ? html`<rs-field .info=${localize("devices.valve_opening_info", l)}>
+                ${picker(
+                  device.valve_opening_entity ?? "",
+                  localize("devices.valve_opening_entity", l),
+                  (v) => this._onValveOpeningChange(id, v, numbers),
+                )}
+              </rs-field>
+              <rs-field
+                .info=${localize(
+                  idleOpening ? "devices.valve_idle_opening_info" : "devices.valve_closing_info",
+                  l,
+                )}
+              >
+                ${picker(
+                  device.valve_closing_entity ?? "",
+                  localize(
                     idleOpening
                       ? "devices.valve_idle_opening_entity"
                       : "devices.valve_closing_entity",
-                    lang,
-                  )}
-                  @value-changed=${(e: CustomEvent) =>
-                    this._onValveClosingChange(entityId, e.detail.value as string)}
-                ></ha-entity-picker>
-                <rs-info-icon
-                  .text=${localize("devices.valve_closing_entity_hint", lang)}
-                ></rs-info-icon>
-              </div>
-              <div class="detail-field with-info">
-                <ha-select
-                  .label=${localize("devices.valve_closing_mode", lang)}
-                  .value=${idleOpening ? "idle_opening" : "closing_degree"}
-                  .options=${[
+                    l,
+                  ),
+                  (v) => this._onValveClosingChange(id, v),
+                )}
+              </rs-field>
+              <rs-field
+                .label=${localize("devices.valve_closing_mode", l)}
+                .info=${localize("devices.valve_closing_mode_info", l)}
+              >
+                ${this._choice(
+                  localize("devices.valve_closing_mode", l),
+                  [
                     {
                       value: "closing_degree",
-                      label: localize("devices.valve_closing_mode_closing_degree", lang),
+                      label: localize("devices.valve_closing_mode_closing_degree", l),
                     },
                     {
                       value: "idle_opening",
-                      label: localize("devices.valve_closing_mode_idle_opening", lang),
+                      label: localize("devices.valve_closing_mode_idle_opening", l),
                     },
+                  ],
+                  idleOpening ? "idle_opening" : "closing_degree",
+                  (v) => this._onValveClosingModeChange(id, v),
+                )}
+              </rs-field>`
+          : nothing
+      }
+      ${
+        this.valveProtectionEnabled
+          ? html`<rs-list-row
+              switch
+              wrap
+              .heading=${localize("devices.valve_protection_exclude", l)}
+              .checked=${this.valveProtectionExclude.has(id)}
+              @toggle-changed=${(e: CustomEvent<boolean>) =>
+                this._onValveProtectionExcludeToggle(id, e.detail)}
+            >
+              <rs-info-icon
+                slot="end"
+                .text=${localize("devices.valve_protection_exclude_info", l)}
+              ></rs-info-icon>
+            </rs-list-row>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private _renderCoilDryGroup(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    const coilDry = device.coil_dry ?? "inherit";
+    const fanModes = (this.hass.states[id]?.attributes?.fan_modes ?? []) as string[];
+    const modeLabel = (m: string) =>
+      localize(m === "dry" ? "devices.coil_dry_mode_dry" : "devices.coil_dry_mode_fan_only", l);
+    const modeInherit = localize("devices.coil_dry_mode_inherit", l, {
+      value: modeLabel(this.coilDryModeGlobal),
+    });
+    const fanInherit = localize("devices.coil_dry_fan_mode_inherit", l, {
+      value: this._globalFanModeLabel(l, id),
+    });
+    const ownMinutes = (device.coil_dry_minutes ?? 0) > 0;
+    // Nothing runs for this device: its details would only be noise
+    const runs = coilDry === "on" || (coilDry === "inherit" && this.coilDryEnabledGlobal);
+    return html`<div class="group">
+      <h4 class="group-title">
+        ${localize("devices.group_coil_dry", l)}
+        <rs-info-icon .text=${localize("devices.coil_dry_info", l)}></rs-info-icon>
+      </h4>
+      ${this._choice(
+        localize("devices.group_coil_dry", l),
+        [
+          {
+            value: "inherit",
+            label: localize(
+              this.coilDryEnabledGlobal
+                ? "devices.coil_dry_inherit_on"
+                : "devices.coil_dry_inherit_off",
+              l,
+            ),
+          },
+          { value: "on", label: localize("devices.coil_dry_on", l) },
+          { value: "off", label: localize("devices.coil_dry_off", l) },
+        ],
+        coilDry,
+        (v) => this._onCoilDryChange(id, v),
+      )}
+      ${
+        coilDry === "inherit" && !this.coilDryEnabledGlobal
+          ? html`<p class="note">${localize("devices.coil_dry_global_off_hint", l)}</p>`
+          : nothing
+      }
+      ${
+        runs
+          ? html`<rs-field
+                .label=${localize("devices.coil_dry_minutes", l)}
+                .info=${localize("devices.coil_dry_minutes_info", l)}
+              >
+                ${this._choice(
+                  localize("devices.coil_dry_minutes", l),
+                  [
+                    {
+                      value: INHERIT,
+                      label: localize("devices.coil_dry_mode_inherit", l, {
+                        value: formatMinutes(this.coilDryMinutesGlobal, l),
+                      }),
+                    },
+                    { value: "own", label: localize("devices.coil_dry_minutes_own", l) },
+                  ],
+                  ownMinutes ? "own" : INHERIT,
+                  (v) =>
+                    this._onCoilDryMinutesChange(id, v === "own" ? this.coilDryMinutesGlobal : 0),
+                )}
+              </rs-field>
+              ${
+                ownMinutes
+                  ? html`<rs-number-field
+                      .label=${localize("devices.coil_dry_minutes_own", l)}
+                      suffix="min"
+                      .min=${1}
+                      .max=${60}
+                      .value=${device.coil_dry_minutes ?? this.coilDryMinutesGlobal}
+                      @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                        this._onCoilDryMinutesChange(id, e.detail.value)}
+                    ></rs-number-field>`
+                  : nothing
+              }
+              <rs-field
+                .label=${localize("devices.coil_dry_mode", l)}
+                .info=${localize("devices.coil_dry_mode_info", l)}
+              >
+                ${this._choice(
+                  localize("devices.coil_dry_mode", l),
+                  [
+                    { value: INHERIT, label: modeInherit },
+                    { value: "fan_only", label: modeLabel("fan_only") },
+                    { value: "dry", label: modeLabel("dry") },
+                  ],
+                  device.coil_dry_mode || INHERIT,
+                  (v) => this._onCoilDryModeChange(id, fromInherit(v)),
+                )}
+              </rs-field>
+              ${
+                device.coil_dry_mode === "dry"
+                  ? html`<p class="note warn">
+                      <ha-icon icon="mdi:alert-outline" aria-hidden="true"></ha-icon>
+                      <span>${localize("coil_dry.mode_dry_warning", l)}</span>
+                    </p>`
+                  : nothing
+              }
+              <rs-field .info=${localize("devices.coil_dry_fan_mode_info", l)}>
+                <ha-select
+                  .label=${localize("devices.coil_dry_fan_mode", l)}
+                  .value=${device.coil_dry_fan_mode || INHERIT}
+                  .options=${[
+                    { value: INHERIT, label: fanInherit },
+                    { value: "__keep__", label: localize("devices.coil_dry_fan_mode_keep", l) },
+                    ...fanModes.map((fm) => ({ value: fm, label: this._fanModeLabel(id, fm) })),
                   ]}
                   @selected=${(e: Event) =>
-                    this._onValveClosingModeChange(entityId, getSelectValue(e)!)}
+                    this._onCoilDryFanModeChange(id, fromInherit(getSelectValue(e)))}
                   @closed=${(e: Event) => e.stopPropagation()}
                   fixedMenuPosition
                 >
-                  <ha-list-item value="closing_degree"
-                    >${localize("devices.valve_closing_mode_closing_degree", lang)}</ha-list-item
+                  <ha-list-item value=${INHERIT}>${fanInherit}</ha-list-item>
+                  <ha-list-item value="__keep__"
+                    >${localize("devices.coil_dry_fan_mode_keep", l)}</ha-list-item
                   >
-                  <ha-list-item value="idle_opening"
-                    >${localize("devices.valve_closing_mode_idle_opening", lang)}</ha-list-item
-                  >
+                  ${fanModes.map(
+                    (fm) =>
+                      html`<ha-list-item value=${fm}>${this._fanModeLabel(id, fm)}</ha-list-item>`,
+                  )}
                 </ha-select>
-                <rs-info-icon
-                  .text=${localize("devices.valve_closing_mode_hint", lang)}
-                ></rs-info-icon>
-              </div>
-            `
+              </rs-field>`
           : nothing
       }
-    `;
+    </div>`;
   }
+
+  /** A fan speed as Home Assistant names it for this device ("low" → "Niedrig"). */
+  private _fanModeLabel(entityId: string, mode: string): string {
+    return fanModeLabel(this.hass, mode, this.hass.states[entityId]);
+  }
+
+  /** Removing drops the device's own settings, so it asks once. */
+  private _renderRemove(device: DeviceConfig) {
+    const l = this.hass.language;
+    const id = device.entity_id;
+    return html`<rs-list-row
+        class="remove"
+        clickable
+        variant="danger"
+        icon="mdi:minus-circle-outline"
+        .heading=${localize("detail.devices.remove", l)}
+        @row-click=${() => {
+          this._confirmRemove = id;
+        }}
+      ></rs-list-row>
+      <rs-confirm-dialog
+        .open=${this._confirmRemove === id}
+        icon="mdi:minus-circle-outline"
+        .heading=${localize("detail.devices.remove", l)}
+        .message=${localize("detail.devices.remove_confirm", l, { name: this._name(id) })}
+        .confirmLabel=${localize("detail.devices.remove_action", l)}
+        @cancel=${() => {
+          this._confirmRemove = "";
+        }}
+        @confirm=${() => this._removeDevice(id)}
+      ></rs-confirm-dialog>`;
+  }
+
+  private _openDetail(entityId: string) {
+    this._selectedForEdit = entityId;
+    this._confirmRemove = "";
+    this._detailOpen = true;
+  }
+
+  private _onBack = () => {
+    this._returnFocus = this._selectedForEdit;
+    this._confirmRemove = "";
+    this._detailOpen = false;
+  };
 
   // ---- Event handlers ----
 
@@ -1406,27 +1223,24 @@ export class RsDeviceSection extends LitElement {
     return "thermostat";
   }
 
-  private _getDeviceDisplayType(entityId: string): string {
-    const device = this.devices.find((d) => d.entity_id === entityId);
-    if (!device) return "thermostat";
-    if (device.type === "ac") return "ac";
-    return "thermostat";
+  /** Adds a climate entity with its detected type and opens its settings. */
+  private _addDevice(entityId: string) {
+    if (this.devices.some((d) => d.entity_id === entityId)) return;
+    const type: DeviceType = this._detectClimateType(entityId) === "thermostat" ? "trv" : "ac";
+    this._focusAdded = entityId;
+    this._fireDeviceChanged([...this.devices, { entity_id: entityId, type, role: "auto" }]);
+    this._selectedForEdit = entityId;
+    this._confirmRemove = "";
+    this._detailOpen = true;
   }
 
-  private _onClimateToggle(entityId: string, checked: boolean) {
-    let newDevices: DeviceConfig[];
-    if (checked) {
-      const detected = this._detectClimateType(entityId);
-      const type: DeviceType = detected === "thermostat" ? "trv" : "ac";
-      newDevices = [...this.devices, { entity_id: entityId, type, role: "auto" }];
-    } else {
-      newDevices = this.devices.filter((d) => d.entity_id !== entityId);
-    }
-    this._fireDeviceChanged(newDevices);
+  private _removeDevice(entityId: string) {
+    this._confirmRemove = "";
+    this._returnFocus = LIST_FOCUS;
+    this._fireDeviceChanged(this.devices.filter((d) => d.entity_id !== entityId));
   }
 
-  private _onDeviceTypeChange(entityId: string, type: "thermostat" | "ac") {
-    const deviceType: DeviceType = type === "thermostat" ? "trv" : "ac";
+  private _onDeviceTypeChange(entityId: string, deviceType: DeviceType) {
     const newDevices = this.devices.map((d) => {
       if (d.entity_id !== entityId) return d;
       const updated: DeviceConfig = { ...d, type: deviceType };
@@ -1498,21 +1312,18 @@ export class RsDeviceSection extends LitElement {
     this._fireDeviceChanged(newDevices);
   }
 
-  private _onSetpointOffsetChange(entityId: string, displayValue: number): void {
-    const celsius = Math.max(
-      -5,
-      Math.min(5, Math.round(toCelsiusDelta(displayValue, this.hass) * 100) / 100),
-    );
+  private _onSetpointOffsetChange(entityId: string, value: number): void {
+    const celsius = Math.max(-5, Math.min(5, Math.round(value * 100) / 100));
     this._fireDeviceChanged(
       this.devices.map((d) => (d.entity_id === entityId ? { ...d, setpoint_offset: celsius } : d)),
     );
   }
 
   /** Global fan mode as shown in the inherit option ("" means keep current). */
-  private _globalFanModeLabel(lang: string): string {
+  private _globalFanModeLabel(lang: string, entityId: string): string {
     return this.coilDryFanModeGlobal === ""
       ? localize("devices.coil_dry_fan_mode_keep", lang)
-      : this.coilDryFanModeGlobal;
+      : this._fanModeLabel(entityId, this.coilDryFanModeGlobal);
   }
 
   private _onCoilDryChange(entityId: string, value: string) {
@@ -1629,9 +1440,7 @@ export class RsDeviceSection extends LitElement {
     );
   }
 
-  private _onHeatingSystemTypeChange(e: Event) {
-    const raw = getSelectValue(e) ?? "";
-    const value = raw === "standard" ? "" : raw;
+  private _onHeatingSystemTypeChange(value: string) {
     this._showBoostHint = true;
     const newDevices = this.devices.map((d) =>
       d.type === "trv" ? { ...d, heating_system_type: value } : d,
@@ -1662,11 +1471,7 @@ export class RsDeviceSection extends LitElement {
     const picker = e.target as HTMLElement & { value: string };
     picker.value = "";
     if (!entityId || !entityId.startsWith("climate.")) return;
-    if (this.devices.some((d) => d.entity_id === entityId)) return;
-    const detected = this._detectClimateType(entityId);
-    const type: DeviceType = detected === "thermostat" ? "trv" : "ac";
-    const newDevices = [...this.devices, { entity_id: entityId, type, role: "auto" as const }];
-    this._fireDeviceChanged(newDevices);
+    this._addDevice(entityId);
   }
 }
 
