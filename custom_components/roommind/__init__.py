@@ -240,7 +240,11 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 
 
 async def _async_register_panel(hass: HomeAssistant) -> None:
-    """Register the RoomMind custom panel in the sidebar."""
+    """Register the RoomMind custom panel in the sidebar.
+
+    The content hash query (the version when the bundle cannot be read) makes browsers fetch
+    the new panel after an update instead of a cached one.
+    """
     if hass.data[DOMAIN].get("panel_registered"):
         return
 
