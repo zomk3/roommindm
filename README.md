@@ -27,7 +27,7 @@
 | custom\_components/roommind/managers/cooling\_interlock.py         |       62 |        0 |    100% |           |
 | custom\_components/roommind/managers/cover\_manager.py             |      227 |        0 |    100% |           |
 | custom\_components/roommind/managers/cover\_orchestrator.py        |      297 |        1 |     99% |       213 |
-| custom\_components/roommind/managers/dehumidifier\_manager.py      |      286 |        7 |     98% |81, 133, 138-140, 171-172 |
+| custom\_components/roommind/managers/dehumidifier\_manager.py      |      292 |        7 |     98% |85, 137, 142-144, 175-176 |
 | custom\_components/roommind/managers/device\_setpoint\_tracker.py  |      102 |        0 |    100% |           |
 | custom\_components/roommind/managers/ekf\_training\_manager.py     |       88 |        0 |    100% |           |
 | custom\_components/roommind/managers/head\_offset\_tracker.py      |       67 |        2 |     97% |    97, 99 |
@@ -62,8 +62,8 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      279 |        3 |     99% |   425-427 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      498 |       15 |     97% |632-633, 637-638, 645-646, 794, 824, 1110-1115, 1454, 1473, 1500-1502 |
-| **TOTAL**                                                          | **11414** |  **241** | **98%** |           |
+| custom\_components/roommind/websocket\_api.py                      |      498 |       15 |     97% |634-635, 639-640, 647-648, 796, 826, 1112-1117, 1456, 1475, 1502-1504 |
+| **TOTAL**                                                          | **11420** |  **241** | **98%** |           |
 
 
 ## Setup coverage badge
