@@ -1057,6 +1057,7 @@ export class RsRoomDetail extends LitElement {
             .outdoor=${this._isOutdoor}
             .temperatureSensor=${this._selectedTempSensor}
             .dehumidifierPowerSensor=${this._dehumidifierPowerSensor}
+            .dehumidifierEntity=${this._dehumidifierEntity}
             .preheatMaxMinutes=${this._preheatMaxMinutes}
             .humiditySensor=${this._selectedHumiditySensor}
             .occupancySensors=${this._selectedOccupancySensors}

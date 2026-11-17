@@ -22,8 +22,16 @@ import "./shared/rs-icon-button";
 import "./shared/rs-info-icon";
 import "./shared/rs-list-row";
 
-type SensorKind = "temp" | "humidity" | "occupancy" | "window" | "co2" | "voc" | "ventilation";
-type SingleKind = "temp" | "humidity" | "co2" | "voc" | "ventilation";
+type SensorKind =
+  | "temp"
+  | "humidity"
+  | "occupancy"
+  | "window"
+  | "co2"
+  | "voc"
+  | "ventilation"
+  | "dehumidifier_power";
+type SingleKind = Exclude<SensorKind, "occupancy" | "window">;
 
 const OCCUPANCY_CLASSES = ["occupancy", "motion", "presence"];
 const WINDOW_CLASSES = ["window", "door", "opening"];
@@ -36,6 +44,7 @@ const SINGLE_KEYS: Record<SingleKind, string> = {
   co2: "co2_sensor",
   voc: "voc_sensor",
   ventilation: "ventilation_entity",
+  dehumidifier_power: "dehumidifier_power_sensor",
 };
 
 @customElement("rs-sensor-section")
@@ -46,6 +55,8 @@ export class RsSensorSection extends LitElement {
   @property({ type: String }) public humiditySensor = "";
   @property({ type: String }) public dehumidifierPowerSensor = "";
   @property({ type: Number }) public preheatMaxMinutes = 60;
+  /** The room's dehumidifier: its power sensor is offered only then, suggested from its device. */
+  @property({ type: String }) public dehumidifierEntity = "";
   @property({ attribute: false }) public occupancySensors: Set<string> = new Set();
   @property({ type: Boolean }) public occupancyEcoEnabled = false;
   @property({ type: Number }) public occupancyEcoDelay = DEFAULT_OCCUPANCY_ECO_DELAY;
@@ -120,31 +131,7 @@ export class RsSensorSection extends LitElement {
     if (!this.editing) {
       return this._renderViewMode();
     }
-    return html`${this._renderEditMode()}
-      <div class="sensor-block">
-        <ha-entity-picker
-          .hass=${this.hass}
-          .includeDomains=${["sensor"]}
-          .value=${this.dehumidifierPowerSensor}
-          .label=${localize("learning.dehumidifier_power", this.language)}
-          allow-custom-entity
-          @value-changed=${(e: CustomEvent) => this._fireLearningChanged("dehumidifier_power_sensor", e.detail?.value ?? "")}
-        ></ha-entity-picker>
-        <p>${localize("learning.dehumidifier_hint", this.language)}</p>
-        <ha-textfield
-          type="number"
-          min="0"
-          max="720"
-          .label=${localize("learning.preheat_limit", this.language)}
-          .value=${String(this.preheatMaxMinutes)}
-          @change=${(e: Event) => {
-            const v = Number((e.target as HTMLInputElement).value);
-            if (Number.isFinite(v) && v >= 0 && v <= 720)
-              this._fireLearningChanged("preheat_max_minutes", v);
-          }}
-        ></ha-textfield>
-        <p>${localize("learning.preheat_hint", this.language)}</p>
-      </div>`;
+    return this._renderEditMode();
   }
 
   // ─── View mode ───
@@ -426,6 +413,8 @@ export class RsSensorSection extends LitElement {
         );
       case "ventilation":
         return VENTILATION_DOMAINS.includes(domain);
+      case "dehumidifier_power":
+        return domain === "sensor" && dc === "power";
     }
   }
 
@@ -436,6 +425,7 @@ export class RsSensorSection extends LitElement {
       co2: this.co2Sensor,
       voc: this.vocSensor,
       ventilation: this.ventilationEntity,
+      dehumidifier_power: this.dehumidifierPowerSensor,
     }[kind];
   }
 
@@ -485,9 +475,43 @@ export class RsSensorSection extends LitElement {
                     html`<p class="note">${localize("sensors.ventilation_note", l)}</p>`,
                   )
                 : nothing
-            }`
+            }
+            ${
+              this.dehumidifierEntity || this.dehumidifierPowerSensor
+                ? this._renderKind("dehumidifier_power", this._dehumidifierCandidates(), nothing)
+                : nothing
+            }
+            ${this._renderPreheat(l)}`
       }
     `;
+  }
+
+  /** Power sensors of the dehumidifier's own device; any other one through the picker. */
+  private _dehumidifierCandidates(): string[] {
+    const deviceId = this.hass.entities?.[this.dehumidifierEntity]?.device_id;
+    if (!deviceId) return [];
+    return Object.values(this.hass.entities)
+      .filter((e) => e.device_id === deviceId && this._accepts("dehumidifier_power", e.entity_id))
+      .map((e) => e.entity_id);
+  }
+
+  private _renderPreheat(l: string) {
+    return html`<section class="group" data-kind="preheat">
+      <h4 class="group-title">
+        <ha-icon icon="mdi:clock-start" aria-hidden="true"></ha-icon>
+        ${localize("sensors.preheat", l)}
+        <rs-info-icon .text=${localize("learning.preheat_hint", l)}></rs-info-icon>
+      </h4>
+      <rs-number-field
+        .label=${localize("learning.preheat_limit", l)}
+        suffix="min"
+        .min=${0}
+        .max=${720}
+        .value=${this.preheatMaxMinutes}
+        @value-changed=${(e: CustomEvent<{ value: number }>) =>
+          this._fireSensorChanged("preheat_max_minutes", e.detail.value)}
+      ></rs-number-field>
+    </section>`;
   }
 
   /** Opened: focus the picker; closed with its button: back to the row that opened it. */
@@ -548,6 +572,12 @@ export class RsSensorSection extends LitElement {
           icon: "mdi:fan",
           title: "detail.sensors.ventilation",
           info: "sensors.ventilation_info",
+        } as const;
+      case "dehumidifier_power":
+        return {
+          icon: "mdi:flash",
+          title: "learning.dehumidifier_power",
+          info: "learning.dehumidifier_hint",
         } as const;
     }
   }
@@ -666,6 +696,7 @@ export class RsSensorSection extends LitElement {
       co2: ["sensor"],
       voc: ["sensor"],
       ventilation: VENTILATION_DOMAINS,
+      dehumidifier_power: ["sensor"],
     }[kind];
     return html`<div class="picker">
       <ha-entity-picker
@@ -698,7 +729,8 @@ export class RsSensorSection extends LitElement {
   private _kindValue(kind: SensorKind, entityId: string): string {
     if (kind === "temp") return this._tempValue(entityId);
     if (kind === "humidity") return this._humidityValue(entityId);
-    if (kind === "co2" || kind === "voc") return this._numberValue(entityId);
+    if (kind === "co2" || kind === "voc" || kind === "dehumidifier_power")
+      return this._numberValue(entityId);
     if (kind === "ventilation") return this._onOffValue(entityId);
     return kind === "window"
       ? this._binaryValue(entityId, "detail.sensors.open", "detail.sensors.closed")
@@ -882,12 +914,6 @@ export class RsSensorSection extends LitElement {
         bubbles: true,
         composed: true,
       }),
-    );
-  }
-
-  private _fireLearningChanged(key: string, value: string | number) {
-    this.dispatchEvent(
-      new CustomEvent("sensor-changed", { detail: { key, value }, bubbles: true, composed: true }),
     );
   }
 }
