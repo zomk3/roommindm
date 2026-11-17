@@ -120,6 +120,10 @@ const ROOM_FIELDS: [string, RoomFieldSync][] = [
     plain("_moldPreventionHeating", (c) => c?.mold_prevention_heating ?? true),
   ],
   [
+    "ventilation_hint_enabled",
+    plain("_ventilationHintEnabled", (c) => c?.ventilation_hint_enabled ?? true),
+  ],
+  [
     "dehumidifier_tank_sensor",
     plain("_dehumidifierTankSensor", (c) => c?.dehumidifier_tank_sensor ?? ""),
   ],
@@ -278,6 +282,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _dehumidifierLower = 50;
   @state() private _dehumidifierUpper = 60;
   @state() private _moldPreventionHeating = true;
+  @state() private _ventilationHintEnabled = true;
   @state() private _dehumidifierTankSensor = "";
   @state() private _dehumidifierDeviceTarget: number | null = null;
   @state() private _dehumidifierPowerSensor = "";
@@ -835,6 +840,7 @@ export class RsRoomDetail extends LitElement {
       .dehumidifierLower=${this._dehumidifierLower}
       .dehumidifierUpper=${this._dehumidifierUpper}
       .moldPreventionHeating=${this._moldPreventionHeating}
+      .ventilationHintEnabled=${this._ventilationHintEnabled}
       @sensor-changed=${this._onSensorChanged}
     ></rs-mold-protection>`;
   }
@@ -1390,6 +1396,8 @@ export class RsRoomDetail extends LitElement {
       this._dehumidifierUpper = value as number;
     } else if (key === "mold_prevention_heating") {
       this._moldPreventionHeating = value as boolean;
+    } else if (key === "ventilation_hint_enabled") {
+      this._ventilationHintEnabled = value as boolean;
     } else if (key === "dehumidifier_tank_sensor") {
       this._dehumidifierTankSensor = value as string;
     } else if (key === "dehumidifier_device_target") {

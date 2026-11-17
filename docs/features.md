@@ -129,7 +129,7 @@ Global dehumidifier settings (Settings → Mold protection → Dehumidifiers):
 | Switching delay | 10 min | A bound or mold risk must hold this long before switching on or off, so a shower peak does not start a full run. 0 = immediately |
 | Minimum run / minimum pause | 10 / 5 min | Compressor protection, measured from the device's last real state change, whoever caused it |
 | Quiet hours | off, 22:00–07:00 | No dehumidifying in this time, except on critical mold risk |
-| Airing hint | on | In rooms with a window sensor: when outdoor air holds at least 2 g/m³ less water than the room, show "air the room" and notify (at most every 2 hours) |
+| Airing hint | on | Notify when a room should be aired (see **Airing hint** below), at most every 2 hours. Off = the hint is still shown in the panel |
 | Prefer airing | off | While airing is recommended, wait 30 minutes before starting the dehumidifier (not on critical mold risk) |
 
 More behaviour per room:
@@ -143,8 +143,8 @@ More behaviour per room:
 - **Status** - the room view and its card show "dehumidifier on · down to 50 % · today 2 h 5 min",
   why it is paused (window, quiet hours, tank), and the airing hint. Today's runtime starts at zero
   after a Home Assistant restart. Once a room has a dehumidifier, the overview bar adds
-  **Dehumidify** (rooms whose dehumidifier is running) and **Air** (rooms where airing is
-  recommended), and the analytics chart marks both as bands.
+  **Dehumidify** (rooms whose dehumidifier is running); **Air** (rooms where airing is
+  recommended) shows whenever a room should be aired. The analytics chart marks both as bands.
 - **Always immediate** - losing the humidity reading (after a 5 minute hold), disabling the option,
   changing the device or deleting the room switch the device off right away when it is reachable;
   an unreachable device is switched off once it is back. With climate control off for the room or
@@ -152,6 +152,13 @@ More behaviour per room:
 - **After a restart** - while the humidity sensor has not reported yet (it shows unknown for a while
   after Home Assistant starts), RoomMind leaves the dehumidifier as it is, for up to 5 minutes; a
   running device keeps running.
+
+**Airing hint** - every room with a humidity sensor, with or without a dehumidifier, gets "air the
+room" while its humidity is at or above its upper bound (default 60 %) or there is mold risk, and
+outdoor air (outdoor temperature and humidity sensor) holds at least 2 g/m³ less water than the
+room. A window sensor is optional: while it reports the window open, the hint ends. Each room
+switches the hint on or off, and sets the bound, in its **Mold protection** card (on by default).
+The hint is advice only and also shows while climate control is off.
 
 Notifications (tank full, airing) go to the mold notification targets, or to a persistent
 notification when none are set.

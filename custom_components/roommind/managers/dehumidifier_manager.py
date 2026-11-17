@@ -8,11 +8,15 @@ dehumidifier is enabled:
 3. Hysteresis: on at the upper bound or on mold risk, off at the lower bound,
    inside the band keep the current state.
 4. Window open or quiet hours -> off (quiet hours yield to critical mold risk).
-5. Outdoor air much drier and the room has a window sensor -> recommend airing
-   (notification); with "prefer airing" hold a start back for a while (not for
-   critical mold risk).
+5. With "prefer airing" and airing recommended, hold a start back for a while
+   (not for critical mold risk).
 6. The switch happens once its condition has held for the switching delay, and
    never before the compressor's minimum run / pause time.
+
+The airing hint does not need a dehumidifier: every room with a humidity reading and the
+hint enabled (per room, on by default) gets it while it needs drying (above its upper bound or at mold risk), its window is closed and
+outdoor air holds clearly less water. It runs before the control steps, also while
+climate control is off (advice only, no commands).
 """
 
 from __future__ import annotations
@@ -213,13 +217,20 @@ class DehumidifierManager:
     # --- lifecycle -------------------------------------------------------------------
 
     async def remove_room(self, area_id: str) -> None:
-        """Release a room's device, switching it off now or as soon as it is reachable again."""
+        """Forget a deleted room: release its device and drop its airing hint."""
+        self._clear_ventilation(area_id)
+        await self._release_device(area_id)
+
+    async def _release_device(self, area_id: str) -> None:
+        """Release a room's device, switching it off now or as soon as it is reachable again.
+
+        The airing hint stays: it does not depend on the dehumidifier.
+        """
         self._last_humidity.pop(area_id, None)
         self._awaiting_first_reading.pop(area_id, None)
         self._paused.discard(area_id)
         self._pending.pop(area_id, None)
         self._status.pop(area_id, None)
-        self._clear_ventilation(area_id)
         self._clear_tank(area_id)
         entity = self._entities.pop(area_id, None)
         if entity and not await self._set_state(entity, False):
@@ -283,6 +294,10 @@ class DehumidifierManager:
         """
         settings = settings or {}
         area_id = room.get("area_id", "unknown")
+        name = area_name or area_id
+        await self._handle_ventilation(
+            area_id, name, room, temperature, humidity, outdoor_temp, outdoor_humidity, window_open, settings
+        )
         if not control_active:
             self._paused.add(area_id)
             self._pending.pop(area_id, None)
@@ -292,13 +307,12 @@ class DehumidifierManager:
         enabled = room.get("dehumidifier_enabled", False) and not room.get("is_outdoor", False)
         previous = self._entities.get(area_id)
         if previous and (previous != entity or not enabled):
-            await self.remove_room(area_id)
+            await self._release_device(area_id)
         if not enabled or not entity or entity.split(".")[0] not in DEHUMIDIFIER_DOMAINS:
             return
         self._entities[area_id] = entity
         self._pending_off.discard(entity)
         self._track_stats(area_id, entity)
-        name = area_name or area_id
 
         lower = room.get("dehumidifier_lower_bound", 50)
         upper = room.get("dehumidifier_upper_bound", 60)
@@ -309,7 +323,6 @@ class DehumidifierManager:
         if humidity is None or not 0 < lower < upper <= 100:
             self._pending.pop(area_id, None)
             self._status[area_id] = STATUS_IDLE
-            self._clear_ventilation(area_id)
             await self._set_state(entity, False)
             return
 
@@ -327,19 +340,6 @@ class DehumidifierManager:
         wants_drying = humidity >= upper or risk in ("warning", "critical")
         desired: bool | None = False if humidity <= lower else (True if wants_drying else None)
         self._status[area_id] = STATUS_IDLE
-
-        await self._handle_ventilation(
-            area_id,
-            name,
-            temperature,
-            humidity,
-            outdoor_temp,
-            outdoor_humidity,
-            wants_drying,
-            window_open,
-            bool(room.get("window_sensors")),
-            settings,
-        )
 
         # Window and quiet hours are not humidity noise: they skip the switching delay
         # (windows have their own open delay per room), not the compressor protection
@@ -432,29 +432,37 @@ class DehumidifierManager:
         self,
         area_id: str,
         name: str,
+        room: dict,
         temperature: float | None,
-        humidity: float,
+        humidity: float | None,
         outdoor_temp: float | None,
         outdoor_humidity: float | None,
-        wants_drying: bool,
         window_open: bool,
-        has_window: bool,
         settings: dict,
     ) -> None:
         """Recommend airing while the room needs drying and outdoor air holds clearly less water.
 
-        Only for rooms with a window sensor: a room without one may have no window to open,
-        and RoomMind could not tell that the advice was followed.
+        Any room with a humidity reading and the hint enabled, with or without a dehumidifier. A window sensor is
+        optional: while it reports the window open the room is being aired already.
         """
         if (
-            not has_window
+            room.get("is_outdoor", False)
+            or not room.get("ventilation_hint_enabled", True)
             or window_open
-            or not wants_drying
             or temperature is None
+            or humidity is None
             or outdoor_temp is None
             or outdoor_humidity is None
-            or not all(math.isfinite(v) for v in (temperature, outdoor_temp, outdoor_humidity))
+            or not all(math.isfinite(v) for v in (temperature, humidity, outdoor_temp, outdoor_humidity))
+            or not 0 <= humidity <= 100
         ):
+            self._clear_ventilation(area_id)
+            return
+        risk, _, _ = calculate_mold_risk(
+            temperature, humidity, outdoor_temp, f_rsi=settings.get("mold_f_rsi", DEFAULT_MOLD_F_RSI)
+        )
+        upper = room.get("dehumidifier_upper_bound", 60)
+        if humidity < upper and risk not in ("warning", "critical"):
             self._clear_ventilation(area_id)
             return
         indoor = absolute_humidity(temperature, humidity)
@@ -476,7 +484,7 @@ class DehumidifierManager:
                 name,
                 settings.get("mold_notification_targets", []),
                 message=(
-                    f"Airing dries {name} faster than the dehumidifier: outdoor air holds "
+                    f"Airing dries {name}: outdoor air holds "
                     f"{outdoor:.1f} g/m³ of water, indoor air {indoor:.1f} g/m³. Open a window for 5-10 minutes."
                 ),
                 title="RoomMind: Air the room",

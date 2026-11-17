@@ -130,6 +130,7 @@ _ROOM_SAVE_FIELDS = (
     "dehumidifier_lower_bound",
     "dehumidifier_upper_bound",
     "mold_prevention_heating",
+    "ventilation_hint_enabled",
     "dehumidifier_tank_sensor",
     "dehumidifier_device_target",
     "dehumidifier_power_sensor",
@@ -531,6 +532,7 @@ async def websocket_list_rooms(
         vol.Optional("dehumidifier_lower_bound"): vol.All(vol.Coerce(float), vol.Range(min=1, max=99)),
         vol.Optional("dehumidifier_upper_bound"): vol.All(vol.Coerce(float), vol.Range(min=2, max=100)),
         vol.Optional("mold_prevention_heating"): bool,
+        vol.Optional("ventilation_hint_enabled"): bool,
         vol.Optional("dehumidifier_tank_sensor"): vol.Any("", vol.Match(r"^binary_sensor\.[a-z0-9_]+$")),
         # None = the device's minimum, 0 = leave the device's own target alone
         vol.Optional("dehumidifier_device_target"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0, max=100))),

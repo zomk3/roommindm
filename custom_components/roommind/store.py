@@ -309,6 +309,7 @@ class RoomMindStore:
             "dehumidifier_lower_bound": config.get("dehumidifier_lower_bound", 50),
             "dehumidifier_upper_bound": config.get("dehumidifier_upper_bound", 60),
             "mold_prevention_heating": config.get("mold_prevention_heating", True),
+            "ventilation_hint_enabled": config.get("ventilation_hint_enabled", True),
             "dehumidifier_tank_sensor": config.get("dehumidifier_tank_sensor", ""),
             "dehumidifier_device_target": config.get("dehumidifier_device_target"),
             "dehumidifier_power_sensor": config.get("dehumidifier_power_sensor", ""),

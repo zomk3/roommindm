@@ -3523,6 +3523,17 @@ async def test_save_room_mold_prevention_heating_roundtrip(ws_hass, store, conne
     assert store.get_room("office")["mold_prevention_heating"] is True
 
 
+@pytest.mark.asyncio
+async def test_save_room_ventilation_hint_roundtrip(ws_hass, store, connection):
+    """A room can switch its airing hint off and on again."""
+    await store.async_load()
+    base = {"type": "roommind/rooms/save", "area_id": "office"}
+    await _save_room(ws_hass, connection, {**base, "id": 13, "ventilation_hint_enabled": False})
+    assert store.get_room("office")["ventilation_hint_enabled"] is False
+    await _save_room(ws_hass, connection, {**base, "id": 14, "ventilation_hint_enabled": True})
+    assert store.get_room("office")["ventilation_hint_enabled"] is True
+
+
 def test_dehumidifier_device_target_schema():
     import voluptuous as vol
 

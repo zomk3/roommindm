@@ -103,7 +103,7 @@ export class RsDashboard extends LitElement {
         i.config?.live?.mold_risk_level === "warning" ||
         i.config?.live?.mold_risk_level === "critical",
     ).length;
-    // Dehumidifying and airing come from room dehumidifiers: only shown once a room has one
+    // Dehumidifying only once a room has a dehumidifier; airing whenever a room should be aired
     const hasDehumidifier = visible.some(
       (i) => !!i.config?.dehumidifier_entity && !!i.config?.dehumidifier_enabled,
     );
@@ -138,7 +138,7 @@ export class RsDashboard extends LitElement {
             >${localize("panel.stat.dehumidifying", l)} <b>${dehumidifying}</b></rs-pill
           >`
         : nothing,
-      hasDehumidifier && airing
+      airing
         ? html`<rs-pill icon="mdi:window-open-variant"
             >${localize("panel.stat.ventilation", l)} <b>${airing}</b></rs-pill
           >`

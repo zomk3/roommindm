@@ -1,5 +1,6 @@
 /**
- * rs-mold-protection – a room's mold protection: prevention heating and the dehumidifier.
+ * rs-mold-protection – a room's mold protection: prevention heating, the airing hint and the
+ * dehumidifier.
  *
  * Lives in the room's own "Mold protection" card. The dehumidifier device and its tank sensor
  * are chosen under Devices, the humidity sensor under Sensors.
@@ -22,6 +23,7 @@ export class RsMoldProtection extends LitElement {
   @property({ type: Number }) public dehumidifierLower = 50;
   @property({ type: Number }) public dehumidifierUpper = 60;
   @property({ type: Boolean }) public moldPreventionHeating = true;
+  @property({ type: Boolean }) public ventilationHintEnabled = true;
 
   static styles = [
     tokens,
@@ -62,6 +64,19 @@ export class RsMoldProtection extends LitElement {
         @row-click=${this._fireEdit}
       ></rs-list-row>
       ${
+        this.humiditySensor
+          ? html`<rs-list-row
+              clickable
+              chevron
+              icon="mdi:window-open-variant"
+              .heading=${localize("mold.room_ventilation_title", l)}
+              .secondary=${this.ventilationHintEnabled ? `≥ ${this.dehumidifierUpper} %` : ""}
+              .value=${localize(this.ventilationHintEnabled ? "common.on" : "common.off", l)}
+              @row-click=${this._fireEdit}
+            ></rs-list-row>`
+          : nothing
+      }
+      ${
         this.dehumidifierEntity
           ? html`<rs-list-row
               clickable
@@ -99,6 +114,22 @@ export class RsMoldProtection extends LitElement {
       <rs-list-row
         switch
         wrap
+        icon="mdi:window-open-variant"
+        .heading=${localize("mold.room_ventilation_title", l)}
+        .secondary=${localize(
+          this.humiditySensor ? "mold.room_ventilation_hint" : "mold.room_ventilation_requires",
+          l,
+        )}
+        .checked=${this.ventilationHintEnabled && !!this.humiditySensor}
+        .disabled=${!this.humiditySensor}
+        @toggle-changed=${(e: CustomEvent<boolean>) => {
+          e.stopPropagation();
+          this._fire("ventilation_hint_enabled", e.detail);
+        }}
+      ></rs-list-row>
+      <rs-list-row
+        switch
+        wrap
         icon="mdi:air-humidifier"
         .heading=${localize("dehumidifier.enabled", l)}
         .secondary=${localize(dehumidifierReady ? "dehumidifier.hint" : "dehumidifier.requires", l)}
@@ -110,20 +141,27 @@ export class RsMoldProtection extends LitElement {
         }}
       ></rs-list-row>
       ${
-        this.dehumidifierEnabled
+        this.dehumidifierEnabled || (this.ventilationHintEnabled && this.humiditySensor)
           ? html`<div class="bounds">
+              ${
+                this.dehumidifierEnabled
+                  ? html`<rs-number-field
+                      .label=${localize("dehumidifier.lower", l)}
+                      suffix="%"
+                      .min=${1}
+                      .max=${this.dehumidifierUpper - 1}
+                      .step=${1}
+                      .value=${this.dehumidifierLower}
+                      @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                        this._fire("dehumidifier_lower_bound", e.detail.value)}
+                    ></rs-number-field>`
+                  : nothing
+              }
               <rs-number-field
-                .label=${localize("dehumidifier.lower", l)}
-                suffix="%"
-                .min=${1}
-                .max=${this.dehumidifierUpper - 1}
-                .step=${1}
-                .value=${this.dehumidifierLower}
-                @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                  this._fire("dehumidifier_lower_bound", e.detail.value)}
-              ></rs-number-field>
-              <rs-number-field
-                .label=${localize("dehumidifier.upper", l)}
+                .label=${localize(
+                  this.dehumidifierEnabled ? "dehumidifier.upper" : "mold.room_ventilation_upper",
+                  l,
+                )}
                 suffix="%"
                 .min=${this.dehumidifierLower + 1}
                 .max=${100}

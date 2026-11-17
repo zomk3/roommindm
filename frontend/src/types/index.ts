@@ -184,6 +184,7 @@ export interface RoomConfig {
   dehumidifier_lower_bound?: number;
   dehumidifier_upper_bound?: number;
   mold_prevention_heating?: boolean;
+  ventilation_hint_enabled?: boolean;
   dehumidifier_tank_sensor?: string;
   dehumidifier_device_target?: number | null;
   dehumidifier_power_sensor?: string;

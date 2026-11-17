@@ -259,18 +259,87 @@ async def test_prefer_airing_does_not_hold_back_on_critical_mold_risk():
 
 
 @pytest.mark.asyncio
-async def test_no_airing_hint_without_a_window_sensor():
+async def test_airing_hint_without_a_window_sensor():
     manager, hass = _manager({"switch.dryer": "off"})
-    settings = {**IMMEDIATE, "dehumidifier_prefer_ventilation": True}
-    with (
-        patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock) as notify,
-        patch(f"{MOD}.calculate_mold_risk", return_value=("warning", 75, 15)),
-    ):
-        await manager.evaluate(_room(), 21, 65, 2, settings, outdoor_humidity=85)
+    with patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock) as notify:
+        await manager.evaluate(_room(), 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+    assert manager.ventilation("bath") is not None
+    assert notify.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "room",
+    [
+        {"area_id": "bath"},  # no dehumidifier at all
+        _room(dehumidifier_enabled=False),
+        {"area_id": "bath", "dehumidifier_upper_bound": 62},
+    ],
+)
+async def test_airing_hint_needs_no_dehumidifier(room):
+    manager, hass = _manager({})
+    with patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock) as notify:
+        await manager.evaluate(room, 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+    assert manager.ventilation("bath") is not None
+    assert notify.await_count == 1
+    assert manager.status("bath") == "off"
+    assert _calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_airing_hint_without_a_dehumidifier_follows_the_upper_bound_and_mold_risk():
+    manager, _ = _manager({})
+    room = {"area_id": "bath", "dehumidifier_upper_bound": 70}
+    with patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock):
+        with patch(f"{MOD}.calculate_mold_risk", return_value=("ok", 60, 17)):
+            await manager.evaluate(room, 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+        assert manager.ventilation("bath") is None  # below the bound, no mold risk
+        with patch(f"{MOD}.calculate_mold_risk", return_value=("warning", 75, 15)):
+            await manager.evaluate(room, 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+        assert manager.ventilation("bath") is not None
+
+
+@pytest.mark.asyncio
+async def test_airing_hint_can_be_switched_off_per_room():
+    manager, _ = _manager({})
+    room = {"area_id": "bath", "ventilation_hint_enabled": False}
+    with patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock) as notify:
+        await manager.evaluate(room, 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
     assert manager.ventilation("bath") is None
     assert notify.await_count == 0
-    # and "prefer airing" does not hold the dehumidifier back there
-    assert _calls(hass) == [("switch", "turn_on", {"entity_id": "switch.dryer"})]
+
+
+@pytest.mark.asyncio
+async def test_airing_hint_also_while_climate_control_is_off():
+    manager, hass = _manager({"switch.dryer": "off"})
+    with patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock):
+        await manager.evaluate(_room(), 21, 65, 2, IMMEDIATE, control_active=False, outdoor_humidity=85)
+    assert manager.ventilation("bath") is not None
+    assert _calls(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_disabling_the_dehumidifier_keeps_the_airing_hint():
+    manager, hass = _manager({"switch.dryer": "on"})
+    with (
+        patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock) as notify,
+        patch(f"{MOD}.dismiss_mold_notification") as dismiss,
+    ):
+        await manager.evaluate(_room(), 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+        await manager.evaluate(_room(dehumidifier_enabled=False), 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+        assert manager.ventilation("bath") is not None
+        assert notify.await_count == 1  # not sent again
+        dismiss.assert_not_called()
+        await manager.remove_room("bath")  # the room is deleted
+        assert manager.ventilation("bath") is None
+
+
+@pytest.mark.asyncio
+async def test_no_airing_hint_for_the_outdoor_area():
+    manager, _ = _manager({})
+    with patch(f"{MOD}.async_send_mold_notification", new_callable=AsyncMock):
+        await manager.evaluate({"area_id": "bath", "is_outdoor": True}, 21, 65, 2, IMMEDIATE, outdoor_humidity=85)
+    assert manager.ventilation("bath") is None
 
 
 # --- 6. quiet hours -----------------------------------------------------------------------
