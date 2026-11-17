@@ -44,6 +44,7 @@ from ..const import (
     VENTILATION_PREFER_MINUTES,
 )
 from ..utils.mold_utils import absolute_humidity, calculate_mold_risk
+from ..utils.notification_texts import notification_text
 from ..utils.notification_utils import (
     NotificationThrottler,
     async_send_mold_notification,
@@ -412,13 +413,14 @@ class DehumidifierManager:
         if area_id not in self._tank_full:
             self._tank_full.add(area_id)
             if settings.get("mold_notifications_enabled", True):
+                title, message = notification_text(self.hass, "tank", room=name)
                 await async_send_mold_notification(
                     self.hass,
                     area_id,
                     name,
                     settings.get("mold_notification_targets", []),
-                    message=f"The dehumidifier in {name} has stopped: its water tank is full.",
-                    title="RoomMind: Dehumidifier tank full",
+                    message=message,
+                    title=title,
                     tag_suffix="tank",
                 )
         return True
@@ -478,16 +480,16 @@ class DehumidifierManager:
             and settings.get("mold_notifications_enabled", True)
             and self._throttler.should_send(key, VENTILATION_NOTIFY_COOLDOWN_MINUTES * 60)
         ):
+            title, message = notification_text(
+                self.hass, "ventilate", room=name, outdoor=f"{outdoor:.1f}", indoor=f"{indoor:.1f}"
+            )
             await async_send_mold_notification(
                 self.hass,
                 area_id,
                 name,
                 settings.get("mold_notification_targets", []),
-                message=(
-                    f"Airing dries {name}: outdoor air holds "
-                    f"{outdoor:.1f} g/m³ of water, indoor air {indoor:.1f} g/m³. Open a window for 5-10 minutes."
-                ),
-                title="RoomMind: Air the room",
+                message=message,
+                title=title,
                 tag_suffix="ventilate",
             )
             self._throttler.record_sent(key)
