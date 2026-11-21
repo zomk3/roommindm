@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import RoomMindCoordinator
+from .coordinator import RoomMindConfigEntry, RoomMindCoordinator
+from .store import get_store
 from .utils.area_utils import rooms_with_area
+
+# Coordinator entities: updates come from the coordinator, commands need no limit
+PARALLEL_UPDATES = 0
 
 
 def _create_room_entities(coordinator: RoomMindCoordinator, area_id: str) -> list[SensorEntity]:
@@ -24,12 +27,12 @@ def _create_room_entities(coordinator: RoomMindCoordinator, area_id: str) -> lis
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: RoomMindConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up RoomMind sensor entities from a config entry."""
-    coordinator: RoomMindCoordinator = hass.data[DOMAIN][entry.entry_id]
-    store = hass.data[DOMAIN]["store"]
+    coordinator = entry.runtime_data
+    store = get_store(hass)
 
     # Store the callback on the coordinator so dynamic entity creation works
     coordinator.async_add_entities = async_add_entities
@@ -39,7 +42,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
     for area_id in rooms:
         entities.extend(_create_room_entities(coordinator, area_id))
-        coordinator._entity_areas.add(area_id)
+        coordinator.sensor_entity_areas.add(area_id)
     if entities:
         async_add_entities(entities)
 

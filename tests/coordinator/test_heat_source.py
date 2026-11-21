@@ -81,7 +81,7 @@ class TestHeatSourceOrchestration:
             assert call_kwargs.kwargs["mode"] == "heating"
 
         # The plan's active_sources should be stored in _heat_source_states
-        assert coordinator._heat_source_states.get("living_room_abc12345") == "primary"
+        assert coordinator.heat_source_states.get("living_room_abc12345") == "primary"
 
         # async_apply was called with the plan (no exception = wiring works)
         room_state = data["rooms"]["living_room_abc12345"]
@@ -118,7 +118,7 @@ class TestHeatSourceOrchestration:
             mock_evaluate.assert_not_called()
 
         # No state stored
-        assert "living_room_abc12345" not in coordinator._heat_source_states
+        assert "living_room_abc12345" not in coordinator.heat_source_states
 
     @pytest.mark.asyncio
     async def test_state_cleanup_on_disable(self, hass, mock_config_entry):
@@ -154,7 +154,7 @@ class TestHeatSourceOrchestration:
             coordinator = _create_coordinator(hass, mock_config_entry)
             await coordinator._async_update_data()
 
-        assert coordinator._heat_source_states.get("living_room_abc12345") == "both"
+        assert coordinator.heat_source_states.get("living_room_abc12345") == "both"
 
         # Second cycle: orchestration OFF
         room_disabled = {**self.ROOM_WITH_BOTH, "heat_source_orchestration": False}
@@ -167,7 +167,7 @@ class TestHeatSourceOrchestration:
             mock_evaluate.assert_not_called()
 
         # State entry must be removed
-        assert "living_room_abc12345" not in coordinator._heat_source_states
+        assert "living_room_abc12345" not in coordinator.heat_source_states
 
     @pytest.mark.asyncio
     async def test_state_cleanup_on_room_deletion(self, hass, mock_config_entry):
@@ -176,8 +176,8 @@ class TestHeatSourceOrchestration:
         coordinator.async_request_refresh = AsyncMock()
 
         # Seed some state
-        coordinator._heat_source_states["test_room_123"] = "primary"
-        coordinator._heat_source_states["other_room_456"] = "secondary"
+        coordinator.heat_source_states["test_room_123"] = "primary"
+        coordinator.heat_source_states["other_room_456"] = "secondary"
 
         mock_registry = MagicMock()
         mock_registry.entities = MagicMock()
@@ -189,9 +189,9 @@ class TestHeatSourceOrchestration:
         ):
             await coordinator.async_room_removed("test_room_123")
 
-        assert "test_room_123" not in coordinator._heat_source_states
+        assert "test_room_123" not in coordinator.heat_source_states
         # Other rooms are not affected
-        assert coordinator._heat_source_states["other_room_456"] == "secondary"
+        assert coordinator.heat_source_states["other_room_456"] == "secondary"
 
     @pytest.mark.asyncio
     async def test_active_heat_sources_in_live_data(self, hass, mock_config_entry):
@@ -282,10 +282,10 @@ class TestHeatSourceOrchestration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Simulate: compressor was recently turned off (min-off not expired)
-        coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
+        coordinator.compressor_manager.load_groups(store.get_settings()["compressor_groups"])
         # Mark the AC as recently deactivated
-        coordinator._compressor_manager.update_member("climate.living_room_ac", True)
-        coordinator._compressor_manager.update_member("climate.living_room_ac", False)
+        coordinator.compressor_manager.update_member("climate.living_room_ac", True)
+        coordinator.compressor_manager.update_member("climate.living_room_ac", False)
         # compressor_off_since is now ~time.time(), so min-off (5 min) not expired
 
         data = await coordinator._async_update_data()
@@ -338,8 +338,8 @@ class TestHeatSourceOrchestration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Pre-load groups and mark AC as actively running (min-run not expired)
-        coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
-        coordinator._compressor_manager.update_member("climate.living_room_ac", True)
+        coordinator.compressor_manager.load_groups(store.get_settings()["compressor_groups"])
+        coordinator.compressor_manager.update_member("climate.living_room_ac", True)
         # compressor_on_since is now ~monotonic(), so min-run (15 min) not expired
 
         data = await coordinator._async_update_data()
@@ -347,7 +347,7 @@ class TestHeatSourceOrchestration:
 
         # The compressor manager should have forced the AC to stay on
         # Verify the AC was NOT turned off (check_must_stay_active returns True)
-        assert coordinator._compressor_manager.check_must_stay_active("climate.living_room_ac") is True
+        assert coordinator.compressor_manager.check_must_stay_active("climate.living_room_ac") is True
         assert room_state["compressor_protection_active"] is True
         assert room_state["compressor_protection_reason"] == "min_run"
 
@@ -390,8 +390,8 @@ class TestHeatSourceOrchestration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Pre-load groups and mark AC as running (min-run active)
-        coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
-        coordinator._compressor_manager.update_member("climate.living_room_ac", True)
+        coordinator.compressor_manager.load_groups(store.get_settings()["compressor_groups"])
+        coordinator.compressor_manager.update_member("climate.living_room_ac", True)
 
         data = await coordinator._async_update_data()
         room_state = data["rooms"]["living_room_abc12345"]
@@ -445,30 +445,30 @@ class TestHeatSourceOrchestration:
         hass.data = {"roommind": {"store": store}}
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
+        coordinator.compressor_manager.load_groups(store.get_settings()["compressor_groups"])
 
         # Both ACs share the same group
         assert (
-            coordinator._compressor_manager.get_group_for_entity("climate.ac_a")
-            == coordinator._compressor_manager.get_group_for_entity("climate.ac_b")
+            coordinator.compressor_manager.get_group_for_entity("climate.ac_a")
+            == coordinator.compressor_manager.get_group_for_entity("climate.ac_b")
             == "shared_outdoor"
         )
 
         # Activate one AC
-        coordinator._compressor_manager.update_member("climate.ac_a", True)
-        assert coordinator._compressor_manager.is_compressor_running("shared_outdoor") is True
+        coordinator.compressor_manager.update_member("climate.ac_a", True)
+        assert coordinator.compressor_manager.is_compressor_running("shared_outdoor") is True
 
         # The other AC can join (compressor already running)
-        assert coordinator._compressor_manager.check_can_activate("climate.ac_b") is True
+        assert coordinator.compressor_manager.check_can_activate("climate.ac_b") is True
 
         # Deactivate ac_a, ac_b still keeps compressor running
-        coordinator._compressor_manager.update_member("climate.ac_b", True)
-        coordinator._compressor_manager.update_member("climate.ac_a", False)
-        assert coordinator._compressor_manager.is_compressor_running("shared_outdoor") is True
+        coordinator.compressor_manager.update_member("climate.ac_b", True)
+        coordinator.compressor_manager.update_member("climate.ac_a", False)
+        assert coordinator.compressor_manager.is_compressor_running("shared_outdoor") is True
 
         # Deactivate last member, compressor stops
-        coordinator._compressor_manager.update_member("climate.ac_b", False)
-        assert coordinator._compressor_manager.is_compressor_running("shared_outdoor") is False
+        coordinator.compressor_manager.update_member("climate.ac_b", False)
+        assert coordinator.compressor_manager.is_compressor_running("shared_outdoor") is False
 
     @pytest.mark.asyncio
     async def test_compressor_min_off_blocks_ac_in_cool_only_room_with_trv(self, hass, mock_config_entry):
@@ -520,9 +520,9 @@ class TestHeatSourceOrchestration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Simulate AC recently deactivated — min-off not yet expired
-        coordinator._compressor_manager.load_groups(store.get_settings()["compressor_groups"])
-        coordinator._compressor_manager.update_member("climate.living_room_ac", True)
-        coordinator._compressor_manager.update_member("climate.living_room_ac", False)
+        coordinator.compressor_manager.load_groups(store.get_settings()["compressor_groups"])
+        coordinator.compressor_manager.update_member("climate.living_room_ac", True)
+        coordinator.compressor_manager.update_member("climate.living_room_ac", False)
 
         data = await coordinator._async_update_data()
         room_state = data["rooms"]["living_room_abc12345"]
@@ -597,7 +597,7 @@ class TestOrchestratedPreheat:
             coordinator = _create_coordinator(hass, mock_config_entry)
             await coordinator._async_update_data()
 
-        sources = coordinator._heat_source_states["living_room_abc12345"]
+        sources = coordinator.heat_source_states["living_room_abc12345"]
         setpoints = [
             c[0][2]["temperature"] for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"
         ]

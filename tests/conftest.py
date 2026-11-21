@@ -186,6 +186,16 @@ def mock_config_entry():
     entry.entry_id = "test_entry_id"
     entry.data = {}
     entry.options = {}
+    entry.runtime_data = None
+    return entry
+
+
+def wire_coordinator(hass, coordinator):  # noqa: ANN001, ANN201
+    """Load a config entry whose runtime_data is *coordinator*, as async_setup_entry does."""
+    entry = MagicMock()
+    entry.entry_id = "test_entry_id"
+    entry.runtime_data = coordinator
+    hass.config_entries.async_loaded_entries = MagicMock(return_value=[entry])
     return entry
 
 
@@ -197,3 +207,11 @@ def store(hass):
     s._store.async_load = AsyncMock(return_value=None)
     s._store.async_save = AsyncMock()
     return s
+
+
+def serve_entry_entities(registry):  # noqa: ANN001, ANN201
+    """Answer the config-entry lookup of a mocked registry: RoomMind's platform entities are its entry's."""
+    registry.entities.get_entries_for_config_entry_id.side_effect = lambda _entry_id: [
+        e for e in registry.entities.values.return_value if e.platform == "roommind"
+    ]
+    return registry

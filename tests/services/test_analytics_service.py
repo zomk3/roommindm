@@ -268,8 +268,8 @@ class TestBuildAnalyticsData:
         store.get_room.return_value = {}
         coordinator = MagicMock()
         coordinator.rooms = {"living_room": {"occupancy_vacant": True}}
-        coordinator._history_store.read_detail.return_value = []
-        coordinator._history_store.read_history.return_value = []
+        coordinator.history_store.read_detail.return_value = []
+        coordinator.history_store.read_history.return_value = []
 
         with patch(
             "custom_components.roommind.services.analytics_service._compute_target_forecast",
@@ -316,12 +316,12 @@ class TestBuildAnalyticsData:
         mgr.get_model.return_value = model
 
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp = 10.0
         coordinator.rooms = {"living_room": {}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         detail_rows = [
             {
@@ -354,7 +354,7 @@ class TestBuildAnalyticsData:
         history_store = MagicMock()
         history_store.read_detail.return_value = detail_rows
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         now = time.time()
         with (
@@ -405,12 +405,12 @@ class TestBuildAnalyticsData:
         mgr._estimators = {"living_room": est}
         mgr.get_model.return_value = est.get_model()
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp_effective = outdoor
         coordinator.rooms = {"living_room": {}}
-        coordinator._weather_manager._outdoor_forecast = forecast
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = forecast
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         async def mock_executor(fn, *args, **kwargs):
             return fn(*args, **kwargs)
@@ -421,7 +421,7 @@ class TestBuildAnalyticsData:
             {"timestamp": "2000", "room_temp": "26.0", "outdoor_temp": "", "target_temp": "24", "mode": "idle"}
         ]
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         with (
             patch(
@@ -464,12 +464,12 @@ class TestBuildAnalyticsData:
         mgr.get_prediction_std.return_value = 0.1
         mgr.get_mode_counts.return_value = (900, 0, 0)
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp_effective = 5.0
         coordinator.rooms = {"office": {}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         async def mock_executor(fn, *args, **kwargs):
             return fn(*args, **kwargs)
@@ -480,7 +480,7 @@ class TestBuildAnalyticsData:
             {"timestamp": "2000", "room_temp": "14.0", "outdoor_temp": "5", "target_temp": "24", "mode": "idle"}
         ]
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         with (
             patch(
@@ -523,12 +523,12 @@ class TestBuildAnalyticsData:
         mgr.get_model.return_value = MagicMock()
 
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp = 10.0
         coordinator.rooms = {"room1": {}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         detail_rows = [
             {
@@ -551,7 +551,7 @@ class TestBuildAnalyticsData:
         history_store = MagicMock()
         history_store.read_detail.return_value = detail_rows
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         now = time.time()
         with (
@@ -602,16 +602,16 @@ class TestBuildAnalyticsData:
         mgr.get_model.return_value = model
 
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp = 10.0
         coordinator.rooms = {"room1": {}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.window_manager._paused = {}
 
         now = time.time()
-        coordinator._residual_tracker._off_since = {"room1": now - 300}
-        coordinator._residual_tracker._on_since = {"room1": now - 900}
-        coordinator._residual_tracker._off_power = {"room1": 0.8}
+        coordinator.residual_tracker._off_since = {"room1": now - 300}
+        coordinator.residual_tracker._on_since = {"room1": now - 900}
+        coordinator.residual_tracker._off_power = {"room1": 0.8}
 
         detail_rows = [
             {
@@ -634,7 +634,7 @@ class TestBuildAnalyticsData:
         history_store = MagicMock()
         history_store.read_detail.return_value = detail_rows
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         with (
             patch(
@@ -766,12 +766,12 @@ class TestBuildAnalyticsShadingFactor:
         mgr.get_model.return_value = model
 
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp = 10.0
         coordinator.rooms = {"room1": {"blind_position": 50}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         now = time.time()
         detail_rows = [
@@ -795,7 +795,7 @@ class TestBuildAnalyticsShadingFactor:
         history_store = MagicMock()
         history_store.read_detail.return_value = detail_rows
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         with (
             patch(
@@ -861,12 +861,12 @@ class TestBuildAnalyticsOccupancy:
         mgr.get_model.return_value = model
 
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp = 10.0
         coordinator.rooms = {"room1": {}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         now = time.time()
         detail_rows = [
@@ -890,7 +890,7 @@ class TestBuildAnalyticsOccupancy:
         history_store = MagicMock()
         history_store.read_detail.return_value = detail_rows
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         with (
             patch(
@@ -945,12 +945,12 @@ class TestBuildAnalyticsOccupancy:
         mgr.get_model.return_value = model
 
         coordinator = MagicMock()
-        coordinator._model_manager = mgr
+        coordinator.model_manager = mgr
         coordinator.outdoor_temp = 10.0
         coordinator.rooms = {"room1": {}}
-        coordinator._weather_manager._outdoor_forecast = []
-        coordinator._residual_tracker._off_since = {}
-        coordinator._window_manager._paused = {}
+        coordinator.weather_manager._outdoor_forecast = []
+        coordinator.residual_tracker._off_since = {}
+        coordinator.window_manager._paused = {}
 
         now = time.time()
         detail_rows = [
@@ -974,7 +974,7 @@ class TestBuildAnalyticsOccupancy:
         history_store = MagicMock()
         history_store.read_detail.return_value = detail_rows
         history_store.read_history.return_value = []
-        coordinator._history_store = history_store
+        coordinator.history_store = history_store
 
         with (
             patch(

@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, ScheduleChoice } from "../types";
 import { formatTemp, tempUnit } from "../utils/temperature";
 import { localize } from "../utils/localize";
+import { errorText } from "../utils/errors";
 
 @customElement("rs-schedule-link")
 export class RsScheduleLink extends LitElement {
@@ -29,8 +30,7 @@ export class RsScheduleLink extends LitElement {
       this.dispatchEvent(new CustomEvent("room-updated", { bubbles: true, composed: true }));
     } catch (err) {
       input.value = previous;
-      this._error =
-        typeof err === "object" && err && "message" in err ? String(err.message) : String(err);
+      this._error = errorText(err, String(err), this.hass.language);
     } finally {
       this._busy = false;
     }

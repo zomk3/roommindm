@@ -45,7 +45,7 @@ class TestConvertForecastTemps:
     def test_with_temperature(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         forecasts = [{"temperature": 5.0, "other": "val"}, {"temperature": 10.0}]
-        result = coordinator._weather_manager._convert_forecast_temps(forecasts)
+        result = coordinator.weather_manager._convert_forecast_temps(forecasts)
         assert result[0]["temperature"] == 5.0
         assert result[0]["other"] == "val"
         assert result[1]["temperature"] == 10.0
@@ -53,7 +53,7 @@ class TestConvertForecastTemps:
     def test_without_temperature(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         forecasts = [{"cloud_coverage": 50}]
-        result = coordinator._weather_manager._convert_forecast_temps(forecasts)
+        result = coordinator.weather_manager._convert_forecast_temps(forecasts)
         assert result == [{"cloud_coverage": 50}]
 
 
@@ -63,13 +63,13 @@ class TestReadWeatherForecast:
     @pytest.mark.asyncio
     async def test_no_weather_entity(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
-        result = await coordinator._weather_manager.async_read_forecast({})
+        result = await coordinator.weather_manager.async_read_forecast({})
         assert result == []
 
     @pytest.mark.asyncio
     async def test_empty_weather_entity(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
-        result = await coordinator._weather_manager.async_read_forecast({"weather_entity": ""})
+        result = await coordinator.weather_manager.async_read_forecast({"weather_entity": ""})
         assert result == []
 
     @pytest.mark.asyncio
@@ -85,7 +85,7 @@ class TestReadWeatherForecast:
                 }
             }
         )
-        result = await coordinator._weather_manager.async_read_forecast({"weather_entity": "weather.home"})
+        result = await coordinator.weather_manager.async_read_forecast({"weather_entity": "weather.home"})
         assert len(result) == 2
         assert result[0]["temperature"] == 5.0
 
@@ -97,7 +97,7 @@ class TestReadWeatherForecast:
         state.attributes = {"forecast": [{"temperature": 7.0}]}
         hass.states.get = MagicMock(return_value=state)
 
-        result = await coordinator._weather_manager.async_read_forecast({"weather_entity": "weather.home"})
+        result = await coordinator.weather_manager.async_read_forecast({"weather_entity": "weather.home"})
         assert len(result) == 1
         assert result[0]["temperature"] == 7.0
 
@@ -109,7 +109,7 @@ class TestReadWeatherForecast:
         available_state.state = "cloudy"
         hass.states.get = MagicMock(side_effect=[available_state, None])
 
-        result = await coordinator._weather_manager.async_read_forecast({"weather_entity": "weather.home"})
+        result = await coordinator.weather_manager.async_read_forecast({"weather_entity": "weather.home"})
         assert result == []
 
     @pytest.mark.asyncio
@@ -120,7 +120,7 @@ class TestReadWeatherForecast:
         state.attributes = {}
         hass.states.get = MagicMock(return_value=state)
 
-        result = await coordinator._weather_manager.async_read_forecast({"weather_entity": "weather.home"})
+        result = await coordinator.weather_manager.async_read_forecast({"weather_entity": "weather.home"})
         assert result == []
 
 
@@ -148,5 +148,5 @@ class TestCoverageGaps:
         await coordinator._async_update_data()
 
         # Verify solar gain is a non-negative float
-        assert isinstance(coordinator._current_q_solar, float)
-        assert coordinator._current_q_solar >= 0
+        assert isinstance(coordinator.current_q_solar, float)
+        assert coordinator.current_q_solar >= 0

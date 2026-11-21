@@ -358,6 +358,9 @@ export interface HomeAssistant {
   formatEntityAttributeValue?: (stateObj: HassEntity, attribute: string, value?: unknown) => string;
   /** HA's own light/dark choice (may differ from the OS). */
   themes?: { darkMode?: boolean };
+  /** Translations HA has loaded, backend ones included (component.<domain>.<category>...). */
+  localize?: (key: string, values?: Record<string, string | number>) => string;
+  loadBackendTranslation?: (category: string, integration?: string) => Promise<unknown>;
 }
 
 export interface HassArea {

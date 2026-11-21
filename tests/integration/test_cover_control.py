@@ -130,9 +130,9 @@ class TestCoverIntegration:
         await coordinator._async_update_data()
 
         # Simulate auto having commanded position 30 (both state fields must match)
-        coordinator._cover_manager._states["living_room"].last_commanded_position = 30
-        coordinator._cover_manager._states["living_room"].current_position = 30
-        coordinator._cover_manager._states["living_room"].last_command_ts = 0.0  # settle window past
+        coordinator.cover_manager._states["living_room"].last_commanded_position = 30
+        coordinator.cover_manager._states["living_room"].current_position = 30
+        coordinator.cover_manager._states["living_room"].last_command_ts = 0.0  # settle window past
 
         # Second cycle: user opened cover to 100 (simulating manual override)
         coordinator.hass.states.get = MagicMock(
@@ -162,7 +162,7 @@ class TestCoverIntegration:
         await coordinator._async_update_data()
 
         # Verify state exists
-        assert "living_room" in coordinator._cover_manager._states
+        assert "living_room" in coordinator.cover_manager._states
 
         # Remove room
         mock_registry = MagicMock()
@@ -177,7 +177,7 @@ class TestCoverIntegration:
         ):
             await coordinator.async_room_removed("living_room")
 
-        assert "living_room" not in coordinator._cover_manager._states
+        assert "living_room" not in coordinator.cover_manager._states
 
     @pytest.mark.asyncio
     async def test_blind_position_recorded_in_history(self, coordinator, real_store):
@@ -195,7 +195,7 @@ class TestCoverIntegration:
         mock_history = MagicMock()
         mock_history.record = MagicMock()
         mock_history.rotate = MagicMock()
-        coordinator._history_store = mock_history
+        coordinator.history_store = mock_history
 
         # Run enough cycles to trigger history write
         for _ in range(HISTORY_WRITE_CYCLES + 1):

@@ -385,7 +385,7 @@ def room_contributes_to_group(
 ) -> bool:
     """Whether a room's group members are heating-active per orchestration.
 
-    Used by coordinator._collect_member_room_modes to decide whether a
+    Used by the coordinator's _collect_member_room_modes to decide whether a
     heating room contributes heating demand to a compressor group's
     master device.
 

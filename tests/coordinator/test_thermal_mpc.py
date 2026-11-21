@@ -36,7 +36,7 @@ class TestCoordinatorMPCIntegration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Pre-train the model so it has valid parameters
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         mgr.update("mpc_room", 17.5, 5.0, "heating", 5.0)
         mgr.update("mpc_room", 18.0, 5.0, "heating", 5.0)
         # Force low prediction std so the MPC path is taken (not bang-bang)
@@ -111,7 +111,7 @@ class TestCoordinatorMPCIntegration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Pre-train and force MPC path
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         mgr.update("forecast_room", 17.5, 3.0, "heating", 5.0)
         mgr.update("forecast_room", 18.0, 3.0, "heating", 5.0)
         mgr.get_prediction_std = MagicMock(return_value=0.1)
@@ -171,7 +171,7 @@ class TestCoordinatorMPCIntegration:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Pre-train with mild outdoor temp so model sees low cooling
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         mgr.update("idle_room", 21.0, 20.0, "idle", 5.0)
         mgr.update("idle_room", 21.0, 20.0, "idle", 5.0)
         mgr.get_prediction_std = MagicMock(return_value=0.1)
@@ -206,7 +206,7 @@ class TestFlushEkfAccumulator:
         coordinator._ekf_training._accumulated_mode["room_a"] = "heating"
         coordinator._ekf_training._accumulated_pf["room_a"] = 0.8
 
-        with patch.object(coordinator._model_manager, "update") as mock_update:
+        with patch.object(coordinator.model_manager, "update") as mock_update:
             coordinator._ekf_training.flush("room_a", 20.0, 5.0, can_heat=True, can_cool=False, q_solar=0.0)
             mock_update.assert_called_once()
 
@@ -231,8 +231,8 @@ class TestResidualHeatTracking:
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
 
-        assert room["area_id"] not in coordinator._residual_tracker._off_since
-        assert room["area_id"] not in coordinator._residual_tracker._on_since
+        assert room["area_id"] not in coordinator.residual_tracker._off_since
+        assert room["area_id"] not in coordinator.residual_tracker._on_since
 
     @pytest.mark.asyncio
     async def test_tracking_with_system_type(self, hass, mock_config_entry):
@@ -251,7 +251,7 @@ class TestResidualHeatTracking:
         await coordinator._async_update_data()
 
         # After first cycle: room should be heating, so _heating_on_since tracked
-        assert room["area_id"] in coordinator._residual_tracker._on_since
+        assert room["area_id"] in coordinator.residual_tracker._on_since
 
     @pytest.mark.asyncio
     async def test_heating_to_idle_transition_populates_off_since(self, hass, mock_config_entry):
@@ -271,11 +271,11 @@ class TestResidualHeatTracking:
         )
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
-        assert aid in coordinator._residual_tracker._on_since
-        assert coordinator._previous_modes.get(aid) == "heating"
+        assert aid in coordinator.residual_tracker._on_since
+        assert coordinator.previous_modes.get(aid) == "heating"
 
         # Backdate mode_on_since so the min-run window has already elapsed
-        coordinator._mode_on_since[aid] = time.time() - 10000
+        coordinator.mode_on_since[aid] = time.time() - 10000
 
         # Cycle 2: idle (schedule off -> eco 17, temp 18 above eco -> idle)
         hass.states.get = make_mock_states_get(
@@ -286,9 +286,9 @@ class TestResidualHeatTracking:
         await coordinator._async_update_data()
 
         # Transition to idle should populate _heating_off_since
-        assert aid in coordinator._residual_tracker._off_since
+        assert aid in coordinator.residual_tracker._off_since
         # Heating start should still be tracked (needed for charge fraction)
-        assert aid in coordinator._residual_tracker._on_since
+        assert aid in coordinator.residual_tracker._on_since
 
     @pytest.mark.asyncio
     async def test_reheat_clears_residual_tracking(self, hass, mock_config_entry):
@@ -308,10 +308,10 @@ class TestResidualHeatTracking:
         )
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
-        assert coordinator._previous_modes.get(aid) == "heating"
+        assert coordinator.previous_modes.get(aid) == "heating"
 
         # Backdate mode_on_since so the min-run window has already elapsed
-        coordinator._mode_on_since[aid] = time.time() - 10000
+        coordinator.mode_on_since[aid] = time.time() - 10000
 
         # Cycle 2: idle
         hass.states.get = make_mock_states_get(
@@ -320,7 +320,7 @@ class TestResidualHeatTracking:
             schedule_attrs={"current_event": False, "friendly_name": "Heat"},
         )
         await coordinator._async_update_data()
-        assert aid in coordinator._residual_tracker._off_since
+        assert aid in coordinator.residual_tracker._off_since
 
         # Cycle 3: heating again
         hass.states.get = make_mock_states_get(
@@ -330,8 +330,8 @@ class TestResidualHeatTracking:
         )
         await coordinator._async_update_data()
         # Reheating should clear off_since and reset on_since
-        assert aid not in coordinator._residual_tracker._off_since
-        assert aid in coordinator._residual_tracker._on_since
+        assert aid not in coordinator.residual_tracker._off_since
+        assert aid in coordinator.residual_tracker._on_since
 
     @pytest.mark.asyncio
     async def test_room_removal_cleans_residual_dicts(self, hass, mock_config_entry):
@@ -345,9 +345,9 @@ class TestResidualHeatTracking:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Manually populate tracking dicts (simulates active heating)
-        coordinator._residual_tracker._on_since[aid] = time.time() - 600
-        coordinator._residual_tracker._off_since[aid] = time.time() - 60
-        coordinator._residual_tracker._off_power[aid] = 0.8
+        coordinator.residual_tracker._on_since[aid] = time.time() - 600
+        coordinator.residual_tracker._off_since[aid] = time.time() - 60
+        coordinator.residual_tracker._off_power[aid] = 0.8
 
         # Now remove the room
         with (
@@ -360,9 +360,9 @@ class TestResidualHeatTracking:
             mock_get.return_value = mock_registry
             await coordinator.async_room_removed(aid)
 
-        assert aid not in coordinator._residual_tracker._off_since
-        assert aid not in coordinator._residual_tracker._off_power
-        assert aid not in coordinator._residual_tracker._on_since
+        assert aid not in coordinator.residual_tracker._off_since
+        assert aid not in coordinator.residual_tracker._off_power
+        assert aid not in coordinator.residual_tracker._on_since
 
     @pytest.mark.asyncio
     async def test_underfloor_window_delay_respects_user_config(self, hass, mock_config_entry):
@@ -387,7 +387,7 @@ class TestResidualHeatTracking:
         await coordinator._async_update_data()
 
         # With delay=0 and window open, underfloor room pauses immediately
-        assert coordinator._window_manager._paused.get(room["area_id"], False)
+        assert coordinator.window_manager._paused.get(room["area_id"], False)
 
 
 class TestResidualHeatLearning:
@@ -426,15 +426,15 @@ class TestResidualHeatLearning:
         assert kwargs["system_type"] == "radiator"
         assert kwargs["disturbed"] is False
         # Weighed against the profile (two prior samples at 1.0)
-        assert coordinator._model_manager.get_residual_scale(aid) == pytest.approx(1.5)
+        assert coordinator.model_manager.get_residual_scale(aid) == pytest.approx(1.5)
 
     @pytest.mark.asyncio
     async def test_heating_room_reports_the_heat_a_stop_would_leave(self, hass, mock_config_entry):
         coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
-        assert coordinator._previous_modes.get(aid) == "heating"
+        assert coordinator.previous_modes.get(aid) == "heating"
         # A long run: the radiators are fully charged
-        coordinator._residual_tracker._on_since[aid] = time.time() - 3600
+        coordinator.residual_tracker._on_since[aid] = time.time() - 3600
         with patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl:
             result = await coordinator._async_update_data()
         heat_run = ctrl.call_args.kwargs["heat_run"]
@@ -450,7 +450,7 @@ class TestResidualHeatLearning:
 
         coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
-        assert coordinator._previous_modes.get(aid) == "heating"
+        assert coordinator.previous_modes.get(aid) == "heating"
 
         async def stop(self, current_temp, targets=None, **_kw):
             self.last_plan = MPCPlan(
@@ -460,7 +460,7 @@ class TestResidualHeatLearning:
 
         with patch.object(MPCController, "async_evaluate", autospec=True, side_effect=stop):
             await coordinator._async_update_data()
-        assert coordinator._previous_modes.get(aid) == "idle"
+        assert coordinator.previous_modes.get(aid) == "idle"
         coordinator._afterglow_reading._step[aid] = 0.2
         stopped_at = coordinator._afterglow_reading._stops[aid][0]
         with (
@@ -470,7 +470,7 @@ class TestResidualHeatLearning:
             await coordinator._async_update_data()
         assert ctrl.call_args.kwargs["planning_temp"] == pytest.approx(18.2)
         # The controller heated again (18 °C under a 21 °C target): the stop is forgotten
-        assert coordinator._previous_modes.get(aid) == "heating"
+        assert coordinator.previous_modes.get(aid) == "heating"
         assert aid not in coordinator._afterglow_reading._stops
         coordinator.reset_thermal_room(aid)
         coordinator.reset_thermal_all()
@@ -481,9 +481,9 @@ class TestResidualHeatLearning:
         room = coordinator.hass.data["roommind"]["store"].get_rooms.return_value[aid]
         room["heating_system_type"] = "underfloor"
         room["devices"][0]["heating_system_type"] = "underfloor"
-        coordinator._model_manager.update_residual_scale(aid, 3.0)
+        coordinator.model_manager.update_residual_scale(aid, 3.0)
         await coordinator._async_update_data()
-        coordinator._residual_tracker._on_since[aid] = time.time() - 3600
+        coordinator.residual_tracker._on_since[aid] = time.time() - 3600
         with (
             patch.object(coordinator._residual_learner, "step", return_value=None) as step,
             patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
@@ -507,13 +507,13 @@ class TestResidualHeatLearning:
     @pytest.mark.asyncio
     async def test_radiator_room_passes_residual_heat_to_control(self, hass, mock_config_entry):
         coordinator, aid = self._radiator_coordinator(hass, mock_config_entry)
-        coordinator._model_manager.update_residual_scale(aid, 3.0)
+        coordinator.model_manager.update_residual_scale(aid, 3.0)
         await coordinator._async_update_data()
-        coordinator._residual_tracker._on_since[aid] = time.time() - 3600
+        coordinator.residual_tracker._on_since[aid] = time.time() - 3600
         with patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl:
             await coordinator._async_update_data()
         assert ctrl.call_args.kwargs["residual_scale"] == pytest.approx(
-            coordinator._model_manager.get_residual_scale(aid)
+            coordinator.model_manager.get_residual_scale(aid)
         )
         assert ctrl.call_args.kwargs["residual_scale"] > 1.0
         assert ctrl.call_args.kwargs["heat_run"] is not None
@@ -528,10 +528,10 @@ class TestResidualHeatLearning:
             await coordinator._async_update_data()
         # The scale was measured against the profile's decay time (none learned yet)
         assert step.call_args.kwargs["tau_minutes"] is None
-        tau = coordinator._model_manager.get_residual_tau(aid)
+        tau = coordinator.model_manager.get_residual_tau(aid)
         assert tau == pytest.approx(10.0 * 4.0 ** (1 / 3))
         # The scale sample (4.0 -> 2.0 after the prior) is rescaled to keep the total heat
-        assert coordinator._model_manager.get_residual_scale(aid) * tau == pytest.approx(2.0 * 10.0)
+        assert coordinator.model_manager.get_residual_scale(aid) * tau == pytest.approx(2.0 * 10.0)
         with (
             patch.object(coordinator._residual_learner, "step", return_value=None) as step,
             patch("custom_components.roommind.coordinator.MPCController", wraps=MPCController) as ctrl,
@@ -549,4 +549,4 @@ class TestResidualHeatLearning:
         ):
             await coordinator._async_update_data()
         take.assert_not_called()
-        assert coordinator._model_manager.get_residual_tau(aid) is None
+        assert coordinator.model_manager.get_residual_tau(aid) is None

@@ -430,11 +430,11 @@ class TestFahrenheitConversion:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
-        assert "climate.living_room" in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
 
         # Find set_temperature calls for the cycling valve
         set_temp_calls = [
@@ -753,7 +753,7 @@ class TestManagedModeDisplay:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_idle > 0, "EKF should have idle training samples in Managed Mode at setpoint"

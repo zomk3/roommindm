@@ -68,7 +68,7 @@ async def test_heating_heat_only_room_keeps_the_ac_out(hass, mock_config_entry):
     assert state["mode"] == MODE_HEATING
     assert "heat" not in _ac_modes(hass)
     # The outdoor unit never started, so it holds nobody to a minimum run.
-    assert not coordinator._compressor_manager.check_must_stay_active(AC)
+    assert not coordinator.compressor_manager.check_must_stay_active(AC)
     assert state["compressor_protection_reason"] is None
     # The room's heating is no demand for the AC group.
     modes = coordinator._collect_member_room_modes(
@@ -83,7 +83,7 @@ async def test_heating_auto_room_still_uses_the_ac(hass, mock_config_entry):
 
     assert coordinator.data["rooms"][AREA]["mode"] == MODE_HEATING
     assert "heat" in _ac_modes(hass)
-    assert coordinator._compressor_manager.check_must_stay_active(AC)
+    assert coordinator.compressor_manager.check_must_stay_active(AC)
 
 
 @pytest.mark.asyncio
@@ -91,7 +91,7 @@ async def test_ac_left_running_keeps_its_minimum_run(hass, mock_config_entry):
     """Switching to heat only mid-run does not stop the outdoor unit before its minimum run."""
     room = _room(climate_mode="auto")
     coordinator = await _run(hass, mock_config_entry, room)
-    assert coordinator._compressor_manager.check_must_stay_active(AC)
+    assert coordinator.compressor_manager.check_must_stay_active(AC)
 
     room["climate_mode"] = "heat_only"
     hass.services.async_call.reset_mock()
@@ -128,9 +128,9 @@ async def test_blocked_trv_idles_the_room_although_the_ac_is_free(hass, mock_con
         **store.get_settings.return_value,
         "compressor_groups": [GROUP, {"id": "g2", "name": "Boiler", "members": [TRV], "min_off_minutes": 30}],
     }
-    coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
-    coordinator._compressor_manager.update_member(TRV, False)
-    with patch.object(coordinator._compressor_manager, "check_can_activate", lambda eid: eid != TRV):
+    coordinator.compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+    coordinator.compressor_manager.update_member(TRV, False)
+    with patch.object(coordinator.compressor_manager, "check_can_activate", lambda eid: eid != TRV):
         coordinator.data = await coordinator._async_update_data()
 
     assert coordinator.data["rooms"][AREA]["mode"] != MODE_HEATING

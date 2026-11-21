@@ -18,7 +18,6 @@ from homeassistant.components.climate import (
     HVACAction,
     HVACMode,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, PRECISION_TENTHS, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
@@ -48,8 +47,9 @@ from .const import (
     is_override_active,
 )
 from .control.mpc_controller import check_acs_can_heat
-from .coordinator import RoomMindCoordinator, _get_area_name
+from .coordinator import RoomMindConfigEntry, RoomMindCoordinator, _get_area_name
 from .deprecation import warn_deprecated_use
+from .store import get_store
 from .utils.area_utils import rooms_with_area
 from .utils.device_utils import get_ac_eids, get_trv_eids
 from .utils.schedule_utils import (
@@ -75,6 +75,9 @@ _OVERRIDE_TO_PRESET: dict[str, str] = {
 }
 _PRESET_TO_OVERRIDE: dict[str, str] = {PRESET_COMFORT: OVERRIDE_BOOST, PRESET_ECO: OVERRIDE_ECO}
 
+# Coordinator entities: updates come from the coordinator, commands need no limit
+PARALLEL_UPDATES = 0
+
 
 def _create_room_climates(
     coordinator: RoomMindCoordinator,
@@ -86,18 +89,18 @@ def _create_room_climates(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: RoomMindConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up RoomMind climate entities from a config entry."""
-    coordinator: RoomMindCoordinator = hass.data[DOMAIN][entry.entry_id]
-    store = hass.data[DOMAIN]["store"]
+    coordinator = entry.runtime_data
+    store = get_store(hass)
     coordinator.async_add_climate_entities = async_add_entities
     rooms = rooms_with_area(hass, store.get_rooms())
     entities: list[ClimateEntity] = []
     for area_id in rooms:
         entities.extend(_create_room_climates(coordinator, area_id))
-        coordinator._climate_entity_areas.add(area_id)
+        coordinator.climate_entity_areas.add(area_id)
     if entities:
         async_add_entities(entities)
 
@@ -194,7 +197,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         await self.coordinator.async_request_refresh()
 
     def _room(self) -> dict | None:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         room: dict | None = store.get_room(self._area_id)
         return room
 
@@ -287,7 +290,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set override targets from range or single temperature."""
         warn_deprecated_use(self.entity_id, self._area_id)
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         band = _band_from_temperature_call(kwargs, self._climate_mode(), self._current_band, self._room() or {})
         if band is None:
             return
@@ -306,7 +309,7 @@ class RoomMindOverrideClimate(CoordinatorEntity, ClimateEntity):
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode: OFF clears override, any other mode activates it."""
         warn_deprecated_use(self.entity_id, self._area_id)
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         if hvac_mode == HVACMode.OFF:
             await store.async_update_room(
                 self._area_id,
@@ -393,7 +396,7 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         registry.async_update_entity_options(self.entity_id, DOMAIN, {**options, "area_assigned": True})
 
     def _store(self) -> Any:
-        return self.coordinator.hass.data[DOMAIN]["store"]
+        return get_store(self.coordinator.hass)
 
     def _room(self) -> dict:
         room: dict | None = self._store().get_room(self._area_id)
@@ -594,7 +597,11 @@ class RoomMindRoomClimate(CoordinatorEntity, ClimateEntity):
         if hvac_mode is not None:
             # HA passes it through unchecked here, unlike the set_hvac_mode service
             if hvac_mode not in self.hvac_modes:
-                raise ServiceValidationError(f"{self.entity_id} does not support hvac_mode {hvac_mode}")
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="hvac_mode_not_supported",
+                    translation_placeholders={"entity_id": self.entity_id, "hvac_mode": str(hvac_mode)},
+                )
             await self.async_set_hvac_mode(hvac_mode)
         if self._already_in_force(kwargs):
             return

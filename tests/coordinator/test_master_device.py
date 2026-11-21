@@ -586,8 +586,8 @@ class TestMasterDeviceControl:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Load groups first so state tracking works, then simulate recent heat start
-        coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
-        coordinator._compressor_manager.set_master_action("g1", "heat")
+        coordinator.compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+        coordinator.compressor_manager.set_master_action("g1", "heat")
 
         await coordinator._async_update_data()
 
@@ -638,9 +638,9 @@ class TestMasterDeviceControl:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Load groups first, then simulate recent off transition
-        coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
-        coordinator._compressor_manager.set_master_action("g1", "heat")
-        coordinator._compressor_manager.set_master_action("g1", "idle")
+        coordinator.compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+        coordinator.compressor_manager.set_master_action("g1", "heat")
+        coordinator.compressor_manager.set_master_action("g1", "idle")
 
         await coordinator._async_update_data()
 
@@ -736,7 +736,7 @@ class TestMasterDeviceControl:
         assert len(boiler_calls) == 0
 
         # State should NOT have been updated to "cool"
-        state = coordinator._compressor_manager.get_state("g1")
+        state = coordinator.compressor_manager.get_state("g1")
         assert state.master_action != "cool"
 
     @pytest.mark.asyncio
@@ -923,7 +923,7 @@ class TestEnforceUniformMode:
 
         # Cycle 1: conflict resolution runs, stores "heat" (heating_priority default)
         await coordinator._async_update_data()
-        state = coordinator._compressor_manager.get_state("g1")
+        state = coordinator.compressor_manager.get_state("g1")
         assert state.master_action == "heat"
 
         # Cycle 2: room_b (cooling) should be forced idle by enforcement
@@ -1011,7 +1011,7 @@ class TestEnforceUniformMode:
 
         # Cycle 1: both heating, no conflict
         await coordinator._async_update_data()
-        state = coordinator._compressor_manager.get_state("g1")
+        state = coordinator.compressor_manager.get_state("g1")
         assert state.master_action == "heat"
 
         # Cycle 2: both still heating, no override
@@ -1046,7 +1046,7 @@ class TestEnforceUniformMode:
         await coordinator._async_update_data()
 
         # master_action should NOT be set (group skipped in _async_control_master_devices)
-        state = coordinator._compressor_manager.get_state("g1")
+        state = coordinator.compressor_manager.get_state("g1")
         assert state.master_action is None
 
     @pytest.mark.asyncio
@@ -1075,7 +1075,7 @@ class TestEnforceUniformMode:
         await coordinator._async_update_data()
 
         # Conflict resolution should have run and stored action
-        state = coordinator._compressor_manager.get_state("g1")
+        state = coordinator.compressor_manager.get_state("g1")
         assert state.master_action == "heat"
 
         # No master climate commands
@@ -1390,8 +1390,8 @@ class TestMasterZoneWake:
         hass.data = {"roommind": {"store": store}}
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
-        coordinator._compressor_manager.set_master_action("g1", "heat")
+        coordinator.compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+        coordinator.compressor_manager.set_master_action("g1", "heat")
 
         await coordinator._async_update_data()
 
@@ -1439,8 +1439,8 @@ class TestMasterZoneWake:
         hass.data = {"roommind": {"store": store}}
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
-        coordinator._compressor_manager.set_master_action("g1", "heat")
+        coordinator.compressor_manager.load_groups(store.get_settings.return_value["compressor_groups"])
+        coordinator.compressor_manager.set_master_action("g1", "heat")
 
         await coordinator._async_update_data()
 
@@ -1660,7 +1660,7 @@ class TestMasterZoneWake:
         coordinator = _create_coordinator(hass, mock_config_entry)
         await coordinator._async_update_data()
 
-        state = coordinator._compressor_manager.get_state("g1")
+        state = coordinator.compressor_manager.get_state("g1")
         assert "climate.zone_a" in state.active_members
 
     @pytest.mark.asyncio
@@ -2471,7 +2471,7 @@ async def test_wake_skips_the_ac_sitting_out_of_heat_only(hass, mock_config_entr
     hass.services.async_call = AsyncMock()
     hass.data = {"roommind": {"store": _make_store_mock(rooms)}}
     coordinator = _create_coordinator(hass, mock_config_entry)
-    coordinator._compressor_manager.load_groups(
+    coordinator.compressor_manager.load_groups(
         [
             {
                 "id": "g1",
@@ -2481,7 +2481,7 @@ async def test_wake_skips_the_ac_sitting_out_of_heat_only(hass, mock_config_entr
             }
         ]
     )
-    group = coordinator._compressor_manager.get_groups()["g1"]
+    group = coordinator.compressor_manager.get_groups()["g1"]
     room_states = {
         "room_a": {"mode": "heating", "commanded_mode": "heating"},
         "room_b": {"mode": "heating", "commanded_mode": "heating"},
@@ -2516,7 +2516,7 @@ async def test_wake_fallback_skips_the_ac_sitting_out_of_heat_only(hass, mock_co
     hass.services.async_call = AsyncMock()
     hass.data = {"roommind": {"store": _make_store_mock(rooms)}}
     coordinator = _create_coordinator(hass, mock_config_entry)
-    coordinator._compressor_manager.load_groups(
+    coordinator.compressor_manager.load_groups(
         [
             {
                 "id": "g1",
@@ -2526,7 +2526,7 @@ async def test_wake_fallback_skips_the_ac_sitting_out_of_heat_only(hass, mock_co
             }
         ]
     )
-    group = coordinator._compressor_manager.get_groups()["g1"]
+    group = coordinator.compressor_manager.get_groups()["g1"]
     room_states = {
         "room_a": {"mode": "heating", "commanded_mode": "heating"},
         "room_b": {"mode": "heating", "commanded_mode": "heating"},
@@ -2553,7 +2553,7 @@ def _wake_coordinator(hass, mock_config_entry, rooms, states):
     hass.services.async_call = AsyncMock()
     hass.data = {"roommind": {"store": _make_store_mock(rooms)}}
     coordinator = _create_coordinator(hass, mock_config_entry)
-    coordinator._compressor_manager.load_groups(
+    coordinator.compressor_manager.load_groups(
         [
             {
                 "id": "g1",
@@ -2563,7 +2563,7 @@ def _wake_coordinator(hass, mock_config_entry, rooms, states):
             }
         ]
     )
-    return coordinator, coordinator._compressor_manager.get_groups()["g1"]
+    return coordinator, coordinator.compressor_manager.get_groups()["g1"]
 
 
 @pytest.mark.asyncio
@@ -2670,7 +2670,7 @@ async def test_a_woken_zone_of_no_room_does_not_count_as_running(hass, mock_conf
     await coordinator._async_wake_member_zone(group, room_states, rooms)
 
     assert _fan_only_wakes(hass) == ["climate.zone_b"]
-    assert not coordinator._compressor_manager.is_compressor_running("g1")
+    assert not coordinator.compressor_manager.is_compressor_running("g1")
 
 
 def _woken_zone_setup(hass, mock_config_entry, master_mode="heat"):

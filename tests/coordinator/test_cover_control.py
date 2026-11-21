@@ -34,9 +34,9 @@ class TestCoverageGaps:
 
         assert mock_add_switch.call_count == 2
         mock_add_binary.assert_called_once()
-        assert "bedroom_abc" in coordinator._switch_entity_areas
-        assert "bedroom_abc" in coordinator._binary_sensor_entity_areas
-        assert "bedroom_abc" in coordinator._climate_control_switch_areas
+        assert "bedroom_abc" in coordinator.switch_entity_areas
+        assert "bedroom_abc" in coordinator.binary_sensor_entity_areas
+        assert "bedroom_abc" in coordinator.climate_control_switch_areas
 
     @pytest.mark.asyncio
     async def test_async_room_added_with_covers_no_duplicate(self, hass, mock_config_entry):
@@ -68,8 +68,8 @@ class TestCoverageGaps:
 
         coordinator.async_add_switch_entities.assert_called_once()
         coordinator.async_add_binary_sensor_entities.assert_not_called()
-        assert "bedroom_abc" in coordinator._climate_control_switch_areas
-        assert "bedroom_abc" not in coordinator._switch_entity_areas
+        assert "bedroom_abc" in coordinator.climate_control_switch_areas
+        assert "bedroom_abc" not in coordinator.switch_entity_areas
 
     @pytest.mark.asyncio
     async def test_is_mpc_active_exception_handled_gracefully(self, hass, mock_config_entry):
@@ -188,10 +188,10 @@ class TestCoverageGaps:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Mock model manager with enough idle data
-        coordinator._model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
+        coordinator.model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
         mock_model = MagicMock()
         mock_model.predict_trajectory = MagicMock(return_value=[22.0, 22.5, 23.0, 23.5, 24.0])
-        coordinator._model_manager.get_model = MagicMock(return_value=mock_model)
+        coordinator.model_manager.get_model = MagicMock(return_value=mock_model)
 
         with (
             patch.object(coordinator._cover_orchestrator, "_idle_solar_model_confident", return_value=True),
@@ -213,7 +213,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_mode_counts = MagicMock(
+        coordinator.model_manager.get_mode_counts = MagicMock(
             return_value=(5, 10, 5)  # n_idle < 30
         )
 
@@ -228,7 +228,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_mode_counts = MagicMock(side_effect=RuntimeError("no model"))
+        coordinator.model_manager.get_mode_counts = MagicMock(side_effect=RuntimeError("no model"))
 
         result = coordinator._cover_orchestrator._estimate_solar_peak_temp("room1", 20.0, 22.0, 0.5, outdoor_temp=15.0)
         expected = 20.0 + COVER_DEFAULT_BETA_S * 0.5 * COVER_LINEAR_LOOKAHEAD_H
@@ -241,7 +241,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_mode_counts = MagicMock(return_value=(5, 0, 0))
+        coordinator.model_manager.get_mode_counts = MagicMock(return_value=(5, 0, 0))
 
         result = coordinator._cover_orchestrator._estimate_solar_peak_temp("room1", None, 22.0, 0.5, outdoor_temp=15.0)
         expected = 22.0 + COVER_DEFAULT_BETA_S * 0.5 * COVER_LINEAR_LOOKAHEAD_H
@@ -258,7 +258,7 @@ class TestCoverageGaps:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         # Enough idle data, but model not confident
-        coordinator._model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
+        coordinator.model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
 
         with (
             patch.object(coordinator._cover_orchestrator, "_idle_solar_model_confident", return_value=False),
@@ -284,7 +284,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
+        coordinator.model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
 
         with patch(
             "custom_components.roommind.managers.cover_orchestrator.build_solar_series",
@@ -303,12 +303,12 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_prediction_std = MagicMock(return_value=0.2)
+        coordinator.model_manager.get_prediction_std = MagicMock(return_value=0.2)
 
         result = coordinator._cover_orchestrator._idle_solar_model_confident("room1", 20.0, 15.0)
 
         assert result is True
-        coordinator._model_manager.get_prediction_std.assert_called_once_with(
+        coordinator.model_manager.get_prediction_std.assert_called_once_with(
             "room1",
             0.0,
             20.0,
@@ -321,7 +321,7 @@ class TestCoverageGaps:
         """High prediction_std returns False."""
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_prediction_std = MagicMock(return_value=0.8)
+        coordinator.model_manager.get_prediction_std = MagicMock(return_value=0.8)
 
         result = coordinator._cover_orchestrator._idle_solar_model_confident("room1", 20.0, 15.0)
 
@@ -331,7 +331,7 @@ class TestCoverageGaps:
         """Exception in get_prediction_std returns False."""
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_prediction_std = MagicMock(side_effect=RuntimeError("boom"))
+        coordinator.model_manager.get_prediction_std = MagicMock(side_effect=RuntimeError("boom"))
 
         result = coordinator._cover_orchestrator._idle_solar_model_confident("room1", 20.0, 15.0)
 
@@ -343,10 +343,10 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        coordinator._model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
+        coordinator.model_manager.get_mode_counts = MagicMock(return_value=(COVER_MIN_IDLE_FOR_LEARNED, 10, 5))
         mock_model = MagicMock()
         mock_model.predict_trajectory = MagicMock(return_value=[22.0, 23.0, 24.0])
-        coordinator._model_manager.get_model = MagicMock(return_value=mock_model)
+        coordinator.model_manager.get_model = MagicMock(return_value=mock_model)
 
         cloud_series = [50.0, 60.0, 70.0]
         coordinator._cover_orchestrator.set_cloud_series(cloud_series)
@@ -377,7 +377,7 @@ class TestCoverageGaps:
         coordinator = _create_coordinator(hass, mock_config_entry)
         area_id = "bedroom_abc"
 
-        coordinator._cover_manager._get_state(area_id).user_override_until = time.time() + 3600
+        coordinator.cover_manager._get_state(area_id).user_override_until = time.time() + 3600
         assert coordinator._cover_orchestrator.is_user_override_active(area_id) is True
 
         coordinator.clear_cover_override(area_id)

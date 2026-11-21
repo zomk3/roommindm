@@ -74,7 +74,7 @@ def test_cover_paused_coordinator_data_none(mock_coordinator):
 async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     """async_setup_entry creates binary sensors for rooms with covers configured."""
     coordinator = MagicMock()
-    coordinator._binary_sensor_entity_areas = set()
+    coordinator.binary_sensor_entity_areas = set()
 
     store = MagicMock()
     store.get_rooms.return_value = {
@@ -86,7 +86,8 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     entry.entry_id = "test_entry"
 
     hass = MagicMock()
-    hass.data = {DOMAIN: {entry.entry_id: coordinator, "store": store}}
+    hass.data = {DOMAIN: {"store": store}}
+    entry.runtime_data = coordinator
 
     async_add_entities = MagicMock()
 
@@ -100,15 +101,15 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     assert len(entities) == 1
     assert isinstance(entities[0], RoomMindCoverPausedSensor)
     # Area tracked
-    assert "living_room" in coordinator._binary_sensor_entity_areas
-    assert "bedroom" not in coordinator._binary_sensor_entity_areas
+    assert "living_room" in coordinator.binary_sensor_entity_areas
+    assert "bedroom" not in coordinator.binary_sensor_entity_areas
 
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_no_covers_no_entities():
     """async_setup_entry does not call async_add_entities when no rooms have covers."""
     coordinator = MagicMock()
-    coordinator._binary_sensor_entity_areas = set()
+    coordinator.binary_sensor_entity_areas = set()
 
     store = MagicMock()
     store.get_rooms.return_value = {"bedroom": {}}
@@ -117,7 +118,8 @@ async def test_async_setup_entry_no_covers_no_entities():
     entry.entry_id = "test_entry"
 
     hass = MagicMock()
-    hass.data = {DOMAIN: {entry.entry_id: coordinator, "store": store}}
+    hass.data = {DOMAIN: {"store": store}}
+    entry.runtime_data = coordinator
 
     async_add_entities = MagicMock()
 
@@ -168,8 +170,8 @@ async def test_async_setup_entry_creates_the_air_quality_sensor_next_to_the_cove
     from custom_components.roommind.binary_sensor import RoomMindAirQualitySensor
 
     coordinator = MagicMock()
-    coordinator._binary_sensor_entity_areas = set()
-    coordinator._air_quality_entity_areas = set()
+    coordinator.binary_sensor_entity_areas = set()
+    coordinator.air_quality_entity_areas = set()
     store = MagicMock()
     store.get_rooms.return_value = {
         "living_room": {"covers": ["cover.blinds"], "co2_sensor": "sensor.co2"},
@@ -179,10 +181,11 @@ async def test_async_setup_entry_creates_the_air_quality_sensor_next_to_the_cove
     entry = MagicMock()
     entry.entry_id = "test_entry"
     hass = MagicMock()
-    hass.data = {DOMAIN: {entry.entry_id: coordinator, "store": store}}
+    hass.data = {DOMAIN: {"store": store}}
+    entry.runtime_data = coordinator
     coordinator.hass = hass
     add = MagicMock()
     await async_setup_entry(hass, entry, add)
     entities = add.call_args[0][0]
     assert [type(e) for e in entities] == [RoomMindCoverPausedSensor, RoomMindAirQualitySensor]
-    assert coordinator._air_quality_entity_areas == {"living_room"}
+    assert coordinator.air_quality_entity_areas == {"living_room"}

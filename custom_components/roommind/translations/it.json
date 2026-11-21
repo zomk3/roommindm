@@ -7,7 +7,7 @@
       }
     },
     "abort": {
-      "already_configured": "RoomMind è già configurato."
+      "single_instance_allowed": "RoomMind è già configurato."
     }
   },
   "issues": {
@@ -44,6 +44,146 @@
       "air_quality": {
         "name": "{room} qualità dell’aria scarsa"
       }
+    }
+  },
+  "exceptions": {
+    "action_script_invalid": {
+      "message": "Lo script di azione {entity_id} deve essere un'entità script."
+    },
+    "admin_only": {
+      "message": "Solo gli amministratori possono modificarlo."
+    },
+    "coordinator_not_ready": {
+      "message": "RoomMind si sta ancora avviando. Riprova tra un momento."
+    },
+    "dehumidifier_incomplete": {
+      "message": "Seleziona prima un deumidificatore e un sensore di umidità."
+    },
+    "dehumidifier_taken": {
+      "message": "Questo deumidificatore è già assegnato a un'altra stanza."
+    },
+    "duplicate_devices": {
+      "message": "Un dispositivo è elencato due volte in questa stanza."
+    },
+    "group_id_duplicate": {
+      "message": "Gli ID dei gruppi di compressori devono essere univoci."
+    },
+    "group_member_duplicate": {
+      "message": "Un'entità clima non può far parte di più gruppi di compressori."
+    },
+    "group_member_not_climate": {
+      "message": "Il membro {entity_id} del gruppo di compressori non è un'entità clima."
+    },
+    "helper_blocks_invalid": {
+      "message": "{day}: questo helper ha blocchi non validi."
+    },
+    "helper_blocks_overlap": {
+      "message": "{day}: i blocchi dell'helper si sovrappongono o superano la mezzanotte."
+    },
+    "helper_temperature_invalid": {
+      "message": "{day}: l'helper contiene una temperatura non valida."
+    },
+    "helper_unreadable": {
+      "message": "Impossibile leggere questo helper di programmazione di Home Assistant."
+    },
+    "humidity_bounds": {
+      "message": "Il limite inferiore di umidità deve essere sotto quello superiore."
+    },
+    "hvac_mode_not_supported": {
+      "message": "{entity_id} non supporta la modalità HVAC {hvac_mode}."
+    },
+    "master_duplicate": {
+      "message": "Un'entità master non può essere assegnata a più gruppi."
+    },
+    "master_in_members": {
+      "message": "L'entità master {entity_id} non può essere anche membro del gruppo."
+    },
+    "master_in_other_group": {
+      "message": "L'entità master {entity_id} è membro di un altro gruppo."
+    },
+    "master_not_climate": {
+      "message": "L'entità master {entity_id} deve essere un'entità clima."
+    },
+    "morning_boost_room": {
+      "message": "Il boost mattutino richiede una stanza interna configurata con climatizzatore e sensore di temperatura esterno."
+    },
+    "night_member_outside_group": {
+      "message": "Le unità con priorità notturna devono appartenere al loro gruppo."
+    },
+    "no_config_entry": {
+      "message": "RoomMind non è configurato."
+    },
+    "no_model": {
+      "message": "Questa stanza non ha ancora un modello appreso."
+    },
+    "override_cool_below_heat": {
+      "message": "L'obiettivo di raffrescamento deve essere almeno pari a quello di riscaldamento."
+    },
+    "override_needs_target": {
+      "message": "Una forzatura personalizzata richiede un obiettivo di riscaldamento e/o raffrescamento."
+    },
+    "own_entity": {
+      "message": "L'entità {entity_id} di RoomMind non può essere assegnata a una stanza."
+    },
+    "room_not_found": {
+      "message": "Stanza {area_id} non trovata."
+    },
+    "schedule_block_count": {
+      "message": "{day}: usa da 1 a 48 blocchi."
+    },
+    "schedule_block_gap": {
+      "message": "{day}: i blocchi devono coprire da mezzanotte a mezzanotte senza vuoti né sovrapposizioni."
+    },
+    "schedule_block_invalid": {
+      "message": "{day}: blocco non valido."
+    },
+    "schedule_block_targets": {
+      "message": "{day}: ogni blocco richiede obiettivi di riscaldamento e raffrescamento."
+    },
+    "schedule_changed": {
+      "message": "Questa programmazione è stata modificata in un'altra finestra. Ricaricala prima di salvare."
+    },
+    "schedule_changed_delete": {
+      "message": "Questa programmazione è stata modificata in un'altra finestra. Ricaricala prima di eliminarla."
+    },
+    "schedule_cool_below_heat": {
+      "message": "{day}: l'obiettivo di raffrescamento deve essere almeno pari a quello di riscaldamento."
+    },
+    "schedule_gone": {
+      "message": "Questa programmazione non esiste più. Ricarica l'elenco delle programmazioni."
+    },
+    "schedule_in_use": {
+      "message": "Rimuovi tutte le stanze e salva prima di eliminare questa programmazione."
+    },
+    "schedule_last_block": {
+      "message": "{day}: l'ultimo blocco deve terminare alle 24:00."
+    },
+    "schedule_missing": {
+      "message": "Questa programmazione riutilizzabile non esiste più."
+    },
+    "schedule_name": {
+      "message": "Dai alla programmazione un nome di massimo 80 caratteri."
+    },
+    "schedule_rooms": {
+      "message": "Scegli solo stanze interne configurate."
+    },
+    "schedule_temperature_range": {
+      "message": "{day}: le temperature devono essere tra 5 e 35 °C."
+    },
+    "schedule_time_format": {
+      "message": "Usa orari da 00:00 a 24:00, in minuti interi."
+    },
+    "schedule_week": {
+      "message": "Una programmazione deve contenere tutti e sette i giorni."
+    },
+    "shared_ac_conflict": {
+      "message": "Il controllo condiviso del climatizzatore sostituisce il controllo master e la modalità uniforme."
+    },
+    "tariff_same_times": {
+      "message": "L'inizio e la fine della fascia a tariffa ridotta devono essere diversi."
+    },
+    "update_failed": {
+      "message": "Tutte le stanze non sono riuscite in questo ciclo di regolazione ({rooms}). Consulta il registro di Home Assistant per i dettagli."
     }
   }
 }

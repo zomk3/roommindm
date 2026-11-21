@@ -19,7 +19,6 @@ from ..const import (
     DEFAULT_ECO_HEAT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
-    DOMAIN,
     HEATING_SYSTEM_RADIATOR,
     MODE_IDLE,
     is_override_active,
@@ -33,6 +32,7 @@ from ..control.mpc_controller import (
 from ..control.residual_heat import afterglow_rise_k, get_min_run_blocks, residual_tau
 from ..control.solar import compute_q_solar_norm
 from ..control.thermal_model import ThermalEKF
+from ..store import get_store
 from ..utils.history_store import MODEL_INPUT_FIELDS
 from ..utils.price_utils import PriceSignal
 from .analytics_stats import compute_period_stats, compute_rhythm, rhythm_window
@@ -197,7 +197,7 @@ async def _compute_target_forecast(
     schedule_blocks = await read_schedule_blocks(hass, entity_id, cache=schedule_blocks_cache) if entity_id else None
 
     if room.get("roommind_schedule_id"):
-        reusable = hass.data[DOMAIN]["store"].get_schedules().get(room["roommind_schedule_id"])
+        reusable = get_store(hass).get_schedules().get(room["roommind_schedule_id"])
         schedule_blocks = reusable["days"] if reusable else None
 
     _hass = hass
@@ -279,7 +279,7 @@ async def build_analytics_data(
     This is the core data assembly extracted from websocket_get_analytics.
     """
     settings = store.get_settings()
-    history_store = getattr(coordinator, "_history_store", None)
+    history_store = getattr(coordinator, "history_store", None)
 
     # Read history data -- custom timestamps take precedence over range preset
     detail: list = []
@@ -314,8 +314,8 @@ async def build_analytics_data(
     stats = compute_period_stats(sorted(history + detail, key=lambda p: p["ts"]), climate_mode)
     # The model's error one hour ahead on this range; the line replaces the stored 3-min prediction
     backtest_figures: dict | None = None
-    if coordinator and area_id in coordinator._model_manager._estimators:
-        est = coordinator._model_manager._estimators[area_id]
+    if coordinator and area_id in coordinator.model_manager._estimators:
+        est = coordinator.model_manager._estimators[area_id]
         merged = sorted(history + detail, key=lambda p: p["ts"])
         result = await hass.async_add_executor_job(backtest, merged, est.get_model(), est.k_window)
         backtest_figures = result.figures()
@@ -351,7 +351,7 @@ async def build_analytics_data(
     # the outdoor limits close both sides (see is_mpc_active)
     mpc_runs = False
     if coordinator:
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         if area_id in mgr._estimators:
             est = mgr._estimators[area_id]
             selected_source = coordinator.rooms.get(area_id, {}).get("model_heating_source", "radiator")
@@ -427,7 +427,7 @@ async def build_analytics_data(
                 # Q_solar is the gain at full sun (1000 W/m²); these are what it means now and today
                 "solar_gain_now": round(
                     rc.Q_solar
-                    * coordinator._current_q_solar
+                    * coordinator.current_q_solar
                     * coordinator.rooms.get(area_id, {}).get("shading_factor", 1.0),
                     3,
                 ),
@@ -470,7 +470,7 @@ async def build_analytics_data(
     pred_temps: list[float | None] = list()
     prediction_enabled = settings.get("prediction_enabled", True)
     if prediction_enabled and target_forecast and coordinator:
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         if area_id in mgr._estimators:
             live = coordinator.rooms.get(area_id, {})
             model = mgr.get_model(
@@ -487,7 +487,7 @@ async def build_analytics_data(
                     break
             if current_t is not None:
                 outdoor_series = build_forecast_outdoor_series(
-                    coordinator._weather_manager._outdoor_forecast,
+                    coordinator.weather_manager._outdoor_forecast,
                     coordinator.outdoor_temp_effective,
                     len(target_forecast),
                 )
@@ -501,7 +501,7 @@ async def build_analytics_data(
                 solar_series = build_forecast_solar_series(
                     hass.config.latitude,
                     hass.config.longitude,
-                    coordinator._weather_manager._outdoor_forecast,
+                    coordinator.weather_manager._outdoor_forecast,
                     len(target_forecast),
                     shading_factor=_shading,
                 )
@@ -514,13 +514,13 @@ async def build_analytics_data(
                 sim_q_residual = 0.0
                 sim_heat_dur = 0.0
                 # Power of the run in progress or the last one (the prediction weighs its afterglow)
-                sim_last_pf = coordinator._residual_tracker._off_power.get(area_id, 1.0)
-                if system_type and area_id in getattr(coordinator._residual_tracker, "_off_since", {}):
+                sim_last_pf = coordinator.residual_tracker._off_power.get(area_id, 1.0)
+                if system_type and area_id in getattr(coordinator.residual_tracker, "_off_since", {}):
                     import time as _time
 
-                    off_since = coordinator._residual_tracker._off_since[area_id]
+                    off_since = coordinator.residual_tracker._off_since[area_id]
                     elapsed = (_time.time() - off_since) / 60.0
-                    sim_heat_dur = (off_since - coordinator._residual_tracker._on_since.get(area_id, off_since)) / 60.0
+                    sim_heat_dur = (off_since - coordinator.residual_tracker._on_since.get(area_id, off_since)) / 60.0
                     from ..control.residual_heat import compute_residual_heat
 
                     sim_q_residual = compute_residual_heat(
@@ -536,8 +536,8 @@ async def build_analytics_data(
 
                 # Seed the run in progress: without it the prediction starts idle, and a
                 # room inside the start hysteresis predicts a stop RoomMind never makes.
-                sim_prev_mode = coordinator._previous_modes.get(area_id, MODE_IDLE)
-                mode_on_since = coordinator._mode_on_since.get(area_id)
+                sim_prev_mode = coordinator.previous_modes.get(area_id, MODE_IDLE)
+                mode_on_since = coordinator.mode_on_since.get(area_id)
                 sim_mode_elapsed = (time.time() - mode_on_since) / 60.0 if mode_on_since is not None else None
 
                 pred_temps = cast(
@@ -548,7 +548,7 @@ async def build_analytics_data(
                         target_forecast=target_forecast,
                         outdoor_series=outdoor_series,
                         current_temp=current_t,
-                        window_open=coordinator._window_manager._paused.get(area_id, False),
+                        window_open=coordinator.window_manager._paused.get(area_id, False),
                         mpc_active=mpc_runs,
                         room_config=room_config,
                         settings={**settings, "control_mode": "bangbang"}
@@ -565,14 +565,14 @@ async def build_analytics_data(
                         residual_scale=sim_scale,
                         residual_tau=sim_tau,
                         q_occupancy=sim_q_occupancy,
-                        q_rebound=coordinator._rebound_tracker.get_charge(area_id),
+                        q_rebound=coordinator.rebound_tracker.get_charge(area_id),
                         previous_mode=sim_prev_mode,
                         mode_elapsed_minutes=sim_mode_elapsed,
                         # AC heating alone in an orchestrated UFH room runs on AC rules
-                        run_system=("" if coordinator._heat_source_states.get(area_id) == "secondary" else system_type),
+                        run_system=("" if coordinator.heat_source_states.get(area_id) == "secondary" else system_type),
                         outdoor_known=(
                             coordinator.outdoor_temp_effective is not None
-                            or bool(coordinator._weather_manager._outdoor_forecast)
+                            or bool(coordinator.weather_manager._outdoor_forecast)
                         ),
                     ),
                 )

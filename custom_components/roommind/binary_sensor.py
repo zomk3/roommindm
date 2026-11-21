@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import RoomMindCoordinator, _get_area_name, has_air_quality_sensor
+from .coordinator import RoomMindConfigEntry, RoomMindCoordinator, _get_area_name, has_air_quality_sensor
+from .store import get_store
 from .utils.area_utils import rooms_with_area
+
+# Coordinator entities: updates come from the coordinator, commands need no limit
+PARALLEL_UPDATES = 0
 
 
 def _create_room_binary_sensors(
@@ -23,22 +26,22 @@ def _create_room_binary_sensors(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: RoomMindConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up RoomMind binary sensor entities from a config entry."""
-    coordinator: RoomMindCoordinator = hass.data[DOMAIN][entry.entry_id]
-    store = hass.data[DOMAIN]["store"]
+    coordinator = entry.runtime_data
+    store = get_store(hass)
     coordinator.async_add_binary_sensor_entities = async_add_entities
     rooms = rooms_with_area(hass, store.get_rooms())
     entities: list[BinarySensorEntity] = []
     for area_id, room in rooms.items():
         if room.get("covers"):
             entities.extend(_create_room_binary_sensors(coordinator, area_id))
-            coordinator._binary_sensor_entity_areas.add(area_id)
+            coordinator.binary_sensor_entity_areas.add(area_id)
         if has_air_quality_sensor(room):
             entities.append(RoomMindAirQualitySensor(coordinator, area_id))
-            coordinator._air_quality_entity_areas.add(area_id)
+            coordinator.air_quality_entity_areas.add(area_id)
     if entities:
         async_add_entities(entities)
 
@@ -77,7 +80,7 @@ class RoomMindAirQualitySensor(CoordinatorEntity, BinarySensorEntity):
         self._area_id = area_id
         self._attr_unique_id = f"{DOMAIN}_{area_id}_air_quality"
         self.entity_id = f"binary_sensor.{DOMAIN}_{area_id}_air_quality"
-        room = coordinator.hass.data[DOMAIN]["store"].get_room(area_id) or {}
+        room = get_store(coordinator.hass).get_room(area_id) or {}
         self._attr_translation_placeholders = {
             "room": room.get("display_name") or _get_area_name(coordinator.hass, area_id)
         }

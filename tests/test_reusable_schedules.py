@@ -86,7 +86,7 @@ async def test_websocket_save_list_summary_assign_and_delete(hass, scheduled_sto
         "area_ids": ["bedroom"],
         "revision": 0,
     }
-    await websocket_save_schedule.__wrapped__(hass, conn, msg)
+    await websocket_save_schedule.__wrapped__.__wrapped__(hass, conn, msg)
     conn.send_error.assert_not_called()
     saved = conn.send_result.call_args.args[1]["schedule"]
     sid = saved["id"]
@@ -102,7 +102,7 @@ async def test_websocket_save_list_summary_assign_and_delete(hass, scheduled_sto
     assert result["reusable_schedules"] == [{"id": sid, "name": "Bedrooms"}]
     await websocket_save_room.__wrapped__(hass, conn, {"id": 4, "area_id": "guest", "roommind_schedule_id": sid})
     assert scheduled_store.get_room("guest")["roommind_schedule_id"] == sid
-    await websocket_delete_schedule.__wrapped__(hass, conn, {"id": 5, "schedule_id": sid, "revision": 1})
+    await websocket_delete_schedule.__wrapped__.__wrapped__(hass, conn, {"id": 5, "schedule_id": sid, "revision": 1})
     assert conn.send_error.call_args.args[1] == "invalid_schedule"
 
 
@@ -111,7 +111,7 @@ async def test_websocket_rejects_bad_save_without_assigning(hass, scheduled_stor
     conn = MagicMock()
     before = scheduled_store.get_rooms()
     msg = {"id": 1, "name": "Bedrooms", "days": week(), "area_ids": ["bedroom"], "revision": 0, **changes}
-    await websocket_save_schedule.__wrapped__(hass, conn, msg)
+    await websocket_save_schedule.__wrapped__.__wrapped__(hass, conn, msg)
     conn.send_error.assert_called_once()
     assert scheduled_store.get_rooms() == before
     assert scheduled_store.get_schedules() == {}
@@ -163,7 +163,7 @@ async def test_websocket_import_is_an_unassigned_draft(hass, scheduled_store):
     with patch(
         "custom_components.roommind.utils.schedule_utils.read_schedule_blocks", new=AsyncMock(return_value=week())
     ):
-        await websocket_import_schedule.__wrapped__(
+        await websocket_import_schedule.__wrapped__.__wrapped__(
             hass, conn, {"id": 1, "entity_id": "schedule.bedroom", "fallback_heat": 19, "fallback_cool": 19.5}
         )
     conn.send_error.assert_not_called()
@@ -175,7 +175,7 @@ async def test_websocket_import_is_an_unassigned_draft(hass, scheduled_store):
     with patch(
         "custom_components.roommind.utils.schedule_utils.read_schedule_blocks", new=AsyncMock(return_value=None)
     ):
-        await websocket_import_schedule.__wrapped__(
+        await websocket_import_schedule.__wrapped__.__wrapped__(
             hass, conn, {"id": 2, "entity_id": "schedule.missing", "fallback_heat": 19, "fallback_cool": 19.5}
         )
     assert conn.send_error.call_args.args[1] == "invalid_schedule"
@@ -191,3 +191,21 @@ async def test_assignment_changes_invalidate_an_older_editor(scheduled_store):
         await store.async_save_schedule("a", schedule, ["bedroom"], 1)
     await store.async_save_schedule("b", schedule, ["bedroom"], 0)
     assert store.get_schedules()["a"]["revision"] == 3
+
+
+@pytest.mark.parametrize(
+    ("handler", "msg"),
+    [
+        (websocket_save_schedule, {"type": "roommind/schedules/save", "name": "X", "days": {}, "area_ids": []}),
+        (websocket_delete_schedule, {"type": "roommind/schedules/delete", "schedule_id": "a"}),
+    ],
+)
+def test_only_admins_change_reusable_schedules(hass, scheduled_store, handler, msg):
+    """The panel offers schedule editing to admins only; the API refuses everyone else too."""
+    from homeassistant.exceptions import Unauthorized
+
+    conn = MagicMock()
+    conn.user.is_admin = False
+    with pytest.raises(Unauthorized):
+        handler(hass, conn, {"id": 1, **msg})
+    assert scheduled_store.get_schedules() == {}

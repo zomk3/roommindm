@@ -11,6 +11,7 @@ from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN
 from .coordinator import _match_room_entity
+from .store import find_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def async_check_deprecated_entities(hass: HomeAssistant) -> None:
     from homeassistant.components.automation import automations_with_entity
     from homeassistant.components.script import scripts_with_entity
 
-    store = hass.data.get(DOMAIN, {}).get("store")
+    store = find_store(hass)
     if store is None:
         return
     rooms = store.get_rooms()

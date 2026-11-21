@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import serve_entry_entities
+
 from .conftest import (
     _create_coordinator,
 )
@@ -79,6 +81,7 @@ class TestCoverageGaps:
             entry_vacation,
             entry_climate_control,
         ]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -121,6 +124,7 @@ class TestCoverageGaps:
             entry_cover_paused,
             entry_valid,
         ]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -151,6 +155,7 @@ class TestCoverageGaps:
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = [entry_valid]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -183,6 +188,7 @@ class TestCoverageGaps:
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = [foreign, orphan_no_entry]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -214,6 +220,7 @@ class TestCoverageGaps:
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = [entry_int_uid, entry_none_uid]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -231,11 +238,12 @@ class TestCoverageGaps:
 
         mock_history_store = MagicMock()
         mock_history_store.remove_room = MagicMock()
-        coordinator._history_store = mock_history_store
+        coordinator.history_store = mock_history_store
 
         mock_registry = MagicMock()
         mock_registry.entities = MagicMock()
         mock_registry.entities.values.return_value = []
+        serve_entry_entities(mock_registry)
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
             return_value=mock_registry,
@@ -249,21 +257,22 @@ class TestCoverageGaps:
         """Its area was deleted (#494): entities go, what it learned stays for the area's return."""
         coordinator = _create_coordinator(hass, mock_config_entry)
         coordinator.async_request_refresh = AsyncMock()
-        coordinator._history_store = MagicMock()
-        coordinator._model_manager = MagicMock()
-        coordinator._entity_areas.add("old_room")
+        coordinator.history_store = MagicMock()
+        coordinator.model_manager = MagicMock()
+        coordinator.sensor_entity_areas.add("old_room")
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = [
             MagicMock(entity_id="climate.roommind_old_room", platform="roommind", unique_id="roommind_old_room_climate")
         ]
+        serve_entry_entities(mock_registry)
         with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_registry):
             await coordinator.async_room_paused("old_room")
 
         mock_registry.async_remove.assert_called_once_with("climate.roommind_old_room")
-        assert "old_room" not in coordinator._entity_areas
-        coordinator._model_manager.remove_room.assert_not_called()
-        coordinator._history_store.remove_room.assert_not_called()
+        assert "old_room" not in coordinator.sensor_entity_areas
+        coordinator.model_manager.remove_room.assert_not_called()
+        coordinator.history_store.remove_room.assert_not_called()
         coordinator.async_request_refresh.assert_not_awaited()
 
     def test_cleanup_keeps_entities_when_area_id_is_prefix_of_another(self, hass, mock_config_entry):
@@ -297,6 +306,7 @@ class TestCoverageGaps:
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = entries
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -314,7 +324,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         coordinator.async_request_refresh = AsyncMock()
-        coordinator._history_store = None
+        coordinator.history_store = None
 
         entry_bedroom = MagicMock()
         entry_bedroom.platform = DOMAIN
@@ -328,6 +338,7 @@ class TestCoverageGaps:
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = [entry_bedroom, entry_sibling]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -346,7 +357,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         coordinator.async_request_refresh = AsyncMock()
-        coordinator._history_store = None
+        coordinator.history_store = None
 
         own = MagicMock()
         own.platform = DOMAIN
@@ -360,6 +371,7 @@ class TestCoverageGaps:
 
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = [own, foreign]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -401,6 +413,7 @@ class TestRoomClimateEntity:
         hass.data = {DOMAIN: {"store": store}}
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = self._entries(("x", "x_override"))
+        serve_entry_entities(mock_registry)
 
         with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_registry):
             coordinator.cleanup_orphaned_entities()
@@ -411,9 +424,10 @@ class TestRoomClimateEntity:
     async def test_room_removed_removes_its_room_climate_only(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         coordinator.async_request_refresh = AsyncMock()
-        coordinator._history_store = None
+        coordinator.history_store = None
         mock_registry = MagicMock()
         mock_registry.entities.values.return_value = self._entries(("x", "x_override"))
+        serve_entry_entities(mock_registry)
 
         with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_registry):
             await coordinator.async_room_removed("x")
@@ -460,6 +474,7 @@ def test_cleanup_removes_leftover_residual_heat_switches(hass, mock_config_entry
         entries.append(e)
     mock_registry = MagicMock()
     mock_registry.entities.values.return_value = entries
+    serve_entry_entities(mock_registry)
 
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_registry):
         coordinator.cleanup_orphaned_entities()

@@ -25,11 +25,12 @@ def _state(state: str, **attrs):  # noqa: ANN003, ANN202
     return obj
 
 
-def _setup(hass, rooms, coordinator, states):  # noqa: ANN001, ANN202
+def _setup(hass, rooms, coordinator, states, entry):  # noqa: ANN001, ANN202
     store = MagicMock()
     store.get_settings.return_value = {}
     store.get_rooms.return_value = rooms
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    entry.runtime_data = coordinator
     hass.states.get = MagicMock(side_effect=states.get)
 
 
@@ -37,7 +38,7 @@ def _setup(hass, rooms, coordinator, states):  # noqa: ANN001, ANN202
 async def test_schema_version_and_location_rounded(hass, mock_config_entry):
     hass.config.latitude = 52.5163
     hass.config.longitude = 13.3777
-    _setup(hass, {}, _make_coordinator(), {})
+    _setup(hass, {}, _make_coordinator(), {}, mock_config_entry)
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["schema_version"] == DIAGNOSTICS_SCHEMA_VERSION == 2
     integ = result["integration"]
@@ -114,7 +115,7 @@ async def test_room_has_full_model_schedule_blocks_and_entities(hass, mock_confi
         "schedule.plan": {"monday": [{"from": dt_time(6, 0), "to": dt_time(22, 0), "data": {"temperature": 21}}]}
     }
     room = {"temperature_sensor": "sensor.t", "schedules": [{"entity_id": "schedule.plan"}]}
-    _setup(hass, {"room_a": room}, coordinator, {"sensor.t": _state("20.5")})
+    _setup(hass, {"room_a": room}, coordinator, {"sensor.t": _state("20.5")}, mock_config_entry)
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     diag = result["rooms"]["room_a"]
     assert diag["model_state"] == {"x": [20.0, 0.5], "P": [[1.0]], "n_updates": 200}
@@ -135,7 +136,7 @@ async def test_history_48h_has_all_columns_and_is_capped(hass, mock_config_entry
     history = MagicMock()
     history.read_detail = MagicMock(return_value=rows)
     coordinator = _make_coordinator(history_store=history)
-    _setup(hass, {"room_a": {}}, coordinator, {})
+    _setup(hass, {"room_a": {}}, coordinator, {}, mock_config_entry)
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     hist = result["history_48h"]["room_a"]
     assert len(hist) == 1000
@@ -150,6 +151,6 @@ async def test_history_48h_read_error_is_empty(hass, mock_config_entry):
     history = MagicMock()
     history.read_detail = MagicMock(side_effect=OSError("disk"))
     coordinator = _make_coordinator(history_store=history)
-    _setup(hass, {"room_a": {}}, coordinator, {})
+    _setup(hass, {"room_a": {}}, coordinator, {}, mock_config_entry)
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["history_48h"]["room_a"] == []

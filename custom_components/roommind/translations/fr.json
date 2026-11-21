@@ -7,7 +7,7 @@
       }
     },
     "abort": {
-      "already_configured": "RoomMind est déjà configuré."
+      "single_instance_allowed": "RoomMind est déjà configuré."
     }
   },
   "issues": {
@@ -44,6 +44,146 @@
       "air_quality": {
         "name": "{room} qualité de l’air mauvaise"
       }
+    }
+  },
+  "exceptions": {
+    "action_script_invalid": {
+      "message": "Le script d'action {entity_id} doit être une entité script."
+    },
+    "admin_only": {
+      "message": "Seuls les administrateurs peuvent modifier ceci."
+    },
+    "coordinator_not_ready": {
+      "message": "RoomMind démarre encore. Réessayez dans un instant."
+    },
+    "dehumidifier_incomplete": {
+      "message": "Sélectionnez d'abord un déshumidificateur et un capteur d'humidité."
+    },
+    "dehumidifier_taken": {
+      "message": "Ce déshumidificateur est déjà attribué à une autre pièce."
+    },
+    "duplicate_devices": {
+      "message": "Un appareil figure deux fois dans cette pièce."
+    },
+    "group_id_duplicate": {
+      "message": "Les identifiants des groupes de compresseurs doivent être uniques."
+    },
+    "group_member_duplicate": {
+      "message": "Une entité climatique ne peut pas appartenir à plusieurs groupes de compresseurs."
+    },
+    "group_member_not_climate": {
+      "message": "Le membre {entity_id} du groupe de compresseurs n'est pas une entité climatique."
+    },
+    "helper_blocks_invalid": {
+      "message": "{day} : cet assistant contient des blocs non valides."
+    },
+    "helper_blocks_overlap": {
+      "message": "{day} : les blocs de l'assistant se chevauchent ou dépassent minuit."
+    },
+    "helper_temperature_invalid": {
+      "message": "{day} : l'assistant contient une température non valide."
+    },
+    "helper_unreadable": {
+      "message": "Impossible de lire cet assistant de programme Home Assistant."
+    },
+    "humidity_bounds": {
+      "message": "La limite d'humidité basse doit être inférieure à la limite haute."
+    },
+    "hvac_mode_not_supported": {
+      "message": "{entity_id} ne prend pas en charge le mode CVC {hvac_mode}."
+    },
+    "master_duplicate": {
+      "message": "Une entité maître ne peut pas être attribuée à plusieurs groupes."
+    },
+    "master_in_members": {
+      "message": "L'entité maître {entity_id} ne peut pas être aussi membre du groupe."
+    },
+    "master_in_other_group": {
+      "message": "L'entité maître {entity_id} est membre d'un autre groupe."
+    },
+    "master_not_climate": {
+      "message": "L'entité maître {entity_id} doit être une entité climatique."
+    },
+    "morning_boost_room": {
+      "message": "Le boost matinal nécessite une pièce intérieure configurée avec climatiseur et capteur de température externe."
+    },
+    "night_member_outside_group": {
+      "message": "Les unités prioritaires la nuit doivent appartenir à leur groupe."
+    },
+    "no_config_entry": {
+      "message": "RoomMind n'est pas configuré."
+    },
+    "no_model": {
+      "message": "Cette pièce n'a pas encore de modèle appris."
+    },
+    "override_cool_below_heat": {
+      "message": "La consigne de refroidissement doit être au moins égale à celle de chauffage."
+    },
+    "override_needs_target": {
+      "message": "Une dérogation personnalisée nécessite une consigne de chauffage et/ou de refroidissement."
+    },
+    "own_entity": {
+      "message": "L'entité {entity_id} de RoomMind ne peut pas être attribuée à une pièce."
+    },
+    "room_not_found": {
+      "message": "Pièce {area_id} introuvable."
+    },
+    "schedule_block_count": {
+      "message": "{day} : utilisez entre 1 et 48 blocs."
+    },
+    "schedule_block_gap": {
+      "message": "{day} : les blocs doivent couvrir de minuit à minuit sans trous ni chevauchements."
+    },
+    "schedule_block_invalid": {
+      "message": "{day} : bloc non valide."
+    },
+    "schedule_block_targets": {
+      "message": "{day} : chaque bloc nécessite des consignes de chauffage et de refroidissement."
+    },
+    "schedule_changed": {
+      "message": "Ce programme a été modifié dans une autre fenêtre. Rechargez-le avant d'enregistrer."
+    },
+    "schedule_changed_delete": {
+      "message": "Ce programme a été modifié dans une autre fenêtre. Rechargez-le avant de le supprimer."
+    },
+    "schedule_cool_below_heat": {
+      "message": "{day} : la consigne de refroidissement doit être au moins égale à celle de chauffage."
+    },
+    "schedule_gone": {
+      "message": "Ce programme n'existe plus. Rechargez la liste des programmes."
+    },
+    "schedule_in_use": {
+      "message": "Retirez toutes les pièces et enregistrez avant de supprimer ce programme."
+    },
+    "schedule_last_block": {
+      "message": "{day} : le dernier bloc doit se terminer à 24:00."
+    },
+    "schedule_missing": {
+      "message": "Ce programme réutilisable n'existe plus."
+    },
+    "schedule_name": {
+      "message": "Donnez au programme un nom de 80 caractères maximum."
+    },
+    "schedule_rooms": {
+      "message": "Choisissez uniquement des pièces intérieures configurées."
+    },
+    "schedule_temperature_range": {
+      "message": "{day} : les températures doivent être comprises entre 5 et 35 °C."
+    },
+    "schedule_time_format": {
+      "message": "Utilisez des heures de 00:00 à 24:00, en minutes entières."
+    },
+    "schedule_week": {
+      "message": "Un programme doit contenir les sept jours."
+    },
+    "shared_ac_conflict": {
+      "message": "La commande de climatisation partagée remplace la commande maître et le mode uniforme."
+    },
+    "tariff_same_times": {
+      "message": "Le début et la fin des heures creuses doivent être différents."
+    },
+    "update_failed": {
+      "message": "Toutes les pièces ont échoué lors de ce cycle de régulation ({rooms}). Consultez le journal de Home Assistant pour plus de détails."
     }
   }
 }

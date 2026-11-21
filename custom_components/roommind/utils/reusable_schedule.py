@@ -9,40 +9,50 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from ..errors import RoomMindValidationError
 from .schedule_utils import find_active_block, sanitize_block_temp
 
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 
+def _day_error(key: str, problem: str, day: str) -> RoomMindValidationError:
+    """A problem on one weekday; the placeholder is the weekday key, which the panel shows in its language."""
+    err = RoomMindValidationError(key, "{day}: " + problem, day=day)
+    err.args = (f"{day.title()}: {problem}",)  # the log keeps "Monday: ..."
+    return err
+
+
 def time_minutes(value: Any) -> int:
     """Parse minute-resolution wall time; 24:00 is an end boundary."""
     if not isinstance(value, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d(?::00)?|24:00(?::00)?", value):
-        raise ValueError("Use times from 00:00 to 24:00, in whole minutes.")
+        raise RoomMindValidationError("schedule_time_format", "Use times from 00:00 to 24:00, in whole minutes.")
     return int(value[:2]) * 60 + int(value[3:5])
 
 
 def validate_schedule(name: str, days: dict) -> dict:
     """Validate full-week coverage, chronological blocks and comfort bands."""
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
-        raise ValueError("Give the schedule a name of up to 80 characters.")
+        raise RoomMindValidationError("schedule_name", "Give the schedule a name of up to 80 characters.")
     if not isinstance(days, dict) or set(days) != set(WEEKDAYS):
-        raise ValueError("A schedule must contain all seven days.")
+        raise RoomMindValidationError("schedule_week", "A schedule must contain all seven days.")
     result: dict = {"name": name.strip(), "days": {}}
     for day in WEEKDAYS:
         blocks = days[day]
         if not isinstance(blocks, list) or not 1 <= len(blocks) <= 48:
-            raise ValueError(f"{day.title()}: use between 1 and 48 blocks.")
+            raise _day_error("schedule_block_count", "use between 1 and 48 blocks.", day)
         expected = 0
         cleaned = []
         for block in blocks:
             if not isinstance(block, dict) or set(block) != {"from", "to", "data"}:
-                raise ValueError(f"{day.title()}: invalid block.")
+                raise _day_error("schedule_block_invalid", "invalid block.", day)
             start, end = time_minutes(block["from"]), time_minutes(block["to"])
             if start != expected or end <= start:
-                raise ValueError(f"{day.title()}: blocks must cover midnight to midnight without gaps or overlaps.")
+                raise _day_error(
+                    "schedule_block_gap", "blocks must cover midnight to midnight without gaps or overlaps.", day
+                )
             data = block["data"]
             if not isinstance(data, dict) or set(data) != {"heat_temperature", "cool_temperature"}:
-                raise ValueError(f"{day.title()}: each block needs heat and cool targets.")
+                raise _day_error("schedule_block_targets", "each block needs heat and cool targets.", day)
             heat = sanitize_block_temp(data["heat_temperature"])
             cool = sanitize_block_temp(data["cool_temperature"])
             if (
@@ -51,9 +61,9 @@ def validate_schedule(name: str, days: dict) -> dict:
                 or heat is None
                 or cool is None
             ):
-                raise ValueError(f"{day.title()}: temperatures must be between 5 and 35 °C.")
+                raise _day_error("schedule_temperature_range", "temperatures must be between 5 and 35 °C.", day)
             if heat > cool:
-                raise ValueError(f"{day.title()}: the cool target must be at least the heat target.")
+                raise _day_error("schedule_cool_below_heat", "the cool target must be at least the heat target.", day)
             cleaned.append(
                 {
                     "from": f"{start // 60:02d}:{start % 60:02d}:00",
@@ -63,7 +73,7 @@ def validate_schedule(name: str, days: dict) -> dict:
             )
             expected = end
         if expected != 1440:
-            raise ValueError(f"{day.title()}: the last block must end at 24:00.")
+            raise _day_error("schedule_last_block", "the last block must end at 24:00.", day)
         result["days"][day] = cleaned
     return result
 
@@ -132,14 +142,14 @@ def import_helper_blocks(name: str, blocks: dict, fallback_heat: float, fallback
     for day in WEEKDAYS:
         source = blocks.get(day, [])
         if not isinstance(source, list):
-            raise ValueError(f"{day.title()}: this helper has invalid blocks.")
+            raise _day_error("helper_blocks_invalid", "this helper has invalid blocks.", day)
         cleaned = []
         cursor = 0
         for block in sorted(source, key=lambda b: str(b.get("from", "00:00:00"))):
             start = time_minutes(str(block["from"]))
             end = time_minutes(str(block["to"])) or 1440
             if start < cursor or end <= start:
-                raise ValueError(f"{day.title()}: helper blocks overlap or cross midnight.")
+                raise _day_error("helper_blocks_overlap", "helper blocks overlap or cross midnight.", day)
             if start > cursor:
                 cleaned.append(
                     {
@@ -155,7 +165,7 @@ def import_helper_blocks(name: str, blocks: dict, fallback_heat: float, fallback
                 raw = data.get(field, single)
                 value = sanitize_block_temp(raw, converter) if raw is not None else default
                 if value is None:
-                    raise ValueError(f"{day.title()}: helper contains an invalid temperature.")
+                    raise _day_error("helper_temperature_invalid", "helper contains an invalid temperature.", day)
                 targets[field] = value
             cleaned.append(
                 {

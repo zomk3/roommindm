@@ -96,7 +96,7 @@ class TestClimateControlDisabled:
         assert room["heating_power"] == 100
 
         # EKF should have trained with heating mode
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_heating > 0, "EKF should have trained with heating observations"
@@ -130,7 +130,7 @@ class TestClimateControlDisabled:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_heating > 0, "Training should use inferred heating when hvac_action is missing"
@@ -168,9 +168,9 @@ class TestClimateControlDisabled:
         # Display should show heating (inferred from hvac_mode + setpoint)
         assert room_data["mode"] == "heating"
         # Internal _previous_modes must stay idle (no side effects)
-        assert coordinator._previous_modes.get("living_room_abc12345") == "idle"
+        assert coordinator.previous_modes.get("living_room_abc12345") == "idle"
         # Residual heat tracking must not be triggered
-        assert "living_room_abc12345" not in coordinator._residual_tracker._on_since
+        assert "living_room_abc12345" not in coordinator.residual_tracker._on_since
 
     @pytest.mark.asyncio
     async def test_device_off_trains_as_idle(self, hass, mock_config_entry):
@@ -200,7 +200,7 @@ class TestClimateControlDisabled:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_idle > 0, "EKF should have trained with idle observations"
@@ -243,7 +243,7 @@ class TestClimateControlDisabled:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_cooling > 0, "EKF should have trained with cooling observations"
@@ -289,7 +289,7 @@ class TestClimateControlDisabled:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_idle == 0 and n_heating == 0 and n_cooling == 0, "No training when actions conflict"
@@ -319,7 +319,7 @@ class TestClimateControlDisabled:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_idle == 0 and n_heating == 0 and n_cooling == 0
@@ -698,7 +698,7 @@ class TestCoverageGaps:
         assert room["heating_power"] == 100
 
         # EKF should have trained with cooling observations, not idle
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_cooling > 0, "EKF should learn from the self-regulating cooling device"
@@ -765,7 +765,7 @@ class TestCoverageGaps:
         for _ in range(13):
             await coordinator._async_update_data()
 
-        n_idle, n_heating, n_cooling = coordinator._model_manager.get_mode_counts(
+        n_idle, n_heating, n_cooling = coordinator.model_manager.get_mode_counts(
             "living_room_abc12345",
         )
         assert n_idle > 0, "Learn-only mode should use inferred idle when hvac_action is missing"
@@ -902,13 +902,13 @@ class TestRoomSwitchedOffByRoomClimate:
     async def test_next_cycle_switches_devices_off_once(self, hass, mock_config_entry):
         room = {**SAMPLE_ROOM, "climate_control_enabled": False}
         coordinator = self._setup(hass, mock_config_entry, room)
-        coordinator._compressor_manager = MagicMock()
+        coordinator.compressor_manager = MagicMock()
 
         data = await coordinator._async_update_data()
 
         assert data["rooms"]["living_room_abc12345"]["mode"] == "idle"
         assert ("set_hvac_mode", {"entity_id": "climate.living_room", "hvac_mode": "off"}) in self._climate_calls(hass)
-        coordinator._compressor_manager.update_member.assert_any_call("climate.living_room", False)
+        coordinator.compressor_manager.update_member.assert_any_call("climate.living_room", False)
         assert coordinator._rooms_to_switch_off == set()
 
         hass.services.async_call.reset_mock()
@@ -966,10 +966,10 @@ class TestRoomSwitchedOffByRoomClimate:
     async def test_failed_off_is_logged_and_skips_group_update(self, hass, mock_config_entry, caplog):
         room = {**SAMPLE_ROOM, "climate_control_enabled": False}
         coordinator = self._setup(hass, mock_config_entry, room)
-        coordinator._compressor_manager = MagicMock()
+        coordinator.compressor_manager = MagicMock()
 
         with patch("custom_components.roommind.coordinator.async_idle_device", side_effect=RuntimeError("unavailable")):
             await coordinator._async_update_data()
 
         assert "switching 'climate.living_room' off failed" in caplog.text
-        coordinator._compressor_manager.update_member.assert_not_called()
+        coordinator.compressor_manager.update_member.assert_not_called()

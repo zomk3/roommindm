@@ -6,14 +6,17 @@ import time
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, VACATION_SENTINEL_UNTIL
-from .coordinator import RoomMindCoordinator
+from .coordinator import RoomMindConfigEntry, RoomMindCoordinator
+from .store import get_store
 from .utils.area_utils import rooms_with_area
+
+# Coordinator entities: updates come from the coordinator, commands need no limit
+PARALLEL_UPDATES = 0
 
 
 def _create_room_switches(
@@ -26,12 +29,12 @@ def _create_room_switches(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: RoomMindConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up RoomMind switch entities from a config entry."""
-    coordinator: RoomMindCoordinator = hass.data[DOMAIN][entry.entry_id]
-    store = hass.data[DOMAIN]["store"]
+    coordinator = entry.runtime_data
+    store = get_store(hass)
     coordinator.async_add_switch_entities = async_add_entities
 
     entities: list[SwitchEntity] = [
@@ -42,10 +45,10 @@ async def async_setup_entry(
     rooms = rooms_with_area(hass, store.get_rooms())
     for area_id, room in rooms.items():
         entities.append(RoomMindClimateControlSwitch(coordinator, area_id))
-        coordinator._climate_control_switch_areas.add(area_id)
+        coordinator.climate_control_switch_areas.add(area_id)
         if room.get("covers"):
             entities.extend(_create_room_switches(coordinator, area_id))
-            coordinator._switch_entity_areas.add(area_id)
+            coordinator.switch_entity_areas.add(area_id)
 
     async_add_entities(entities)
 
@@ -66,19 +69,19 @@ class RoomMindCoverAutoSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if automatic cover control is enabled."""
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         room = store.get_room(self._area_id)
         return bool(room.get("covers_auto_enabled", False)) if room else False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable automatic cover control."""
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_update_room(self._area_id, {"covers_auto_enabled": True})
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable automatic cover control."""
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_update_room(self._area_id, {"covers_auto_enabled": False})
         await self.coordinator.async_request_refresh()
 
@@ -96,17 +99,17 @@ class RoomMindClimateControlSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         room = store.get_room(self._area_id)
         return bool(room.get("climate_control_enabled", True)) if room else True
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_update_room(self._area_id, {"climate_control_enabled": True})
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_update_room(self._area_id, {"climate_control_enabled": False})
         await self.coordinator.async_request_refresh()
 
@@ -126,14 +129,14 @@ class RoomMindVacationSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if vacation mode is active."""
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         settings = store.get_settings()
         vacation_until = settings.get("vacation_until")
         return bool(vacation_until is not None and time.time() < vacation_until)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Activate vacation mode with stored temp, no end date."""
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         settings = store.get_settings()
         temp = settings.get("vacation_temp", 15.0)
         await store.async_save_settings(
@@ -146,7 +149,7 @@ class RoomMindVacationSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Deactivate vacation mode."""
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_save_settings({"vacation_until": None})
         await self.coordinator.async_request_refresh()
 
@@ -165,15 +168,15 @@ class RoomMindGlobalClimateControlSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         return bool(store.get_settings().get("climate_control_active", True))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_save_settings({"climate_control_active": True})
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        store = self.coordinator.hass.data[DOMAIN]["store"]
+        store = get_store(self.coordinator.hass)
         await store.async_save_settings({"climate_control_active": False})
         await self.coordinator.async_request_refresh()

@@ -37,7 +37,7 @@ async def _run(hass, entry, action: str, settings: dict | None = None):
     hass.services.async_call = AsyncMock()
     coordinator = _create_coordinator(hass, entry)
     history = MagicMock()
-    coordinator._history_store = history
+    coordinator.history_store = history
     coordinator._history_write_count = HISTORY_WRITE_CYCLES - 1
     await coordinator._async_update_data()
     records = [c for c in hass.async_add_executor_job.call_args_list if c[0] and c[0][0] is history.record]

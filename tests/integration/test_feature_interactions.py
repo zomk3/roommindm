@@ -240,7 +240,7 @@ class TestRoomRemovalCleanup:
         await setup_room(real_store)
 
         await coordinator._async_update_data()
-        assert "living_room" in coordinator._previous_modes
+        assert "living_room" in coordinator.previous_modes
 
         await real_store.async_delete_room("living_room")
         data = await coordinator._async_update_data()

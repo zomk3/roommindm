@@ -25,6 +25,7 @@ from custom_components.roommind.websocket_api import (
     websocket_thermal_reset,
     websocket_thermal_reset_all,
 )
+from tests.conftest import wire_coordinator
 
 # The HA @async_response decorator wraps async handlers into synchronous
 # schedulers.  Access the original coroutine via ``__wrapped__`` so we can
@@ -192,7 +193,7 @@ async def test_list_rooms_after_save(ws_hass, store, connection):
     mock_coordinator = MagicMock()
     mock_coordinator.rooms = {}  # No live data yet
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -230,7 +231,7 @@ async def test_list_rooms_learning_paused_when_outdoor_unavailable(ws_hass, stor
     mock_coordinator.outdoor_temp = None
     mock_coordinator.outdoor_temp_effective = None
     mock_coordinator.outdoor_humidity = None
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -260,7 +261,7 @@ async def test_list_rooms_learning_paused_none_when_outdoor_available(ws_hass, s
     mock_coordinator.outdoor_temp = 5.0
     mock_coordinator.outdoor_temp_effective = 5.0
     mock_coordinator.outdoor_humidity = None
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -291,7 +292,7 @@ async def test_list_rooms_learning_paused_respects_learning_disabled(ws_hass, st
     mock_coordinator.outdoor_temp = None
     mock_coordinator.outdoor_temp_effective = None
     mock_coordinator.outdoor_humidity = None
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -320,7 +321,7 @@ async def test_list_rooms_learning_paused_for_managed_mode(ws_hass, store, conne
     mock_coordinator.outdoor_temp = None
     mock_coordinator.outdoor_temp_effective = None
     mock_coordinator.outdoor_humidity = None
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -350,7 +351,7 @@ async def test_list_rooms_learning_paused_none_for_outdoor_area(ws_hass, store, 
     mock_coordinator.outdoor_temp = None
     mock_coordinator.outdoor_temp_effective = None
     mock_coordinator.outdoor_humidity = None
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -369,7 +370,7 @@ async def test_list_rooms_outdoor_temp_uses_effective(ws_hass, store, connection
     mock_coordinator.outdoor_temp = None
     mock_coordinator.outdoor_temp_effective = 8.5
     mock_coordinator.outdoor_humidity = None
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 1, "type": "roommind/rooms/list"})
 
@@ -400,7 +401,7 @@ async def test_save_room_display_name_roundtrip(ws_hass, store, connection):
     mock_coordinator = MagicMock()
     mock_coordinator.rooms = {}
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -534,7 +535,7 @@ async def test_save_room_notifies_coordinator(ws_hass, store, connection):
     mock_coordinator = MagicMock()
     mock_coordinator.async_room_added = AsyncMock()
     # hasattr check used by _get_coordinator
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     msg = {
         "id": 2,
@@ -564,7 +565,7 @@ async def test_delete_room_notifies_coordinator(ws_hass, store, connection):
 
     mock_coordinator = MagicMock()
     mock_coordinator.async_room_removed = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     delete_msg = {
         "id": 3,
@@ -920,7 +921,7 @@ async def test_list_rooms_includes_active_schedule_index(ws_hass, store, connect
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -968,7 +969,7 @@ async def test_list_rooms_includes_compressor_protection_status(ws_hass, store, 
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -1014,7 +1015,7 @@ async def test_list_rooms_includes_coil_dry_status(ws_hass, store, connection):
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -1045,7 +1046,7 @@ async def test_list_rooms_coil_dry_defaults_without_coordinator_state(ws_hass, s
     mock_coordinator = MagicMock()
     mock_coordinator.rooms = {}
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -1085,7 +1086,7 @@ async def test_list_rooms_includes_cover_override_until(ws_hass, store, connecti
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -1161,7 +1162,7 @@ async def test_list_rooms_includes_window_open(ws_hass, store, connection):
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     list_msg = {"id": 3, "type": "roommind/rooms/list"}
     await _list_rooms(ws_hass, connection, list_msg)
@@ -1209,7 +1210,7 @@ async def test_save_settings_climate_control_refreshes_at_once(ws_hass, store, c
     await store.async_load()
     coordinator = MagicMock()
     coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     await _save_settings(
         ws_hass, connection, {"id": 13, "type": "roommind/settings/save", "climate_control_active": False}
@@ -1276,7 +1277,7 @@ def _make_coordinator_with_model(ws_hass):
     mock_history = MagicMock()
     mock_history.remove_room = MagicMock()
     mock_coordinator.history_store = mock_history
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
     return mock_coordinator
 
 
@@ -1662,23 +1663,23 @@ def _make_analytics_coordinator(history_rows=None, estimator=None, rooms_live=No
     coordinator.outdoor_temp = 5.0
     coordinator.outdoor_temp_effective = 5.0
     coordinator.outdoor_humidity = 60
-    coordinator._weather_manager._outdoor_forecast = []
-    coordinator._window_manager._paused = {}
+    coordinator.weather_manager._outdoor_forecast = []
+    coordinator.window_manager._paused = {}
 
     if history_rows is not None:
         hs = MagicMock()
         hs.read_detail.return_value = history_rows
         hs.read_history.return_value = []
-        coordinator._history_store = hs
+        coordinator.history_store = hs
     else:
-        coordinator._history_store = None
+        coordinator.history_store = None
 
     from custom_components.roommind.control.thermal_model import RoomModelManager
 
     mgr = RoomModelManager()
     if estimator:
         mgr._estimators["room_a"] = estimator
-    coordinator._model_manager = mgr
+    coordinator.model_manager = mgr
 
     return coordinator
 
@@ -1690,7 +1691,7 @@ async def test_analytics_no_history_store(ws_hass, store, connection):
     await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
 
     coordinator = _make_analytics_coordinator(history_rows=None)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 50, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1719,7 +1720,7 @@ async def test_analytics_with_range_key(ws_hass, store, connection):
         },
     ]
     coordinator = _make_analytics_coordinator(history_rows=csv_rows)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 51, "type": "roommind/analytics/get", "area_id": "room_a", "range": "24h"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1733,7 +1734,7 @@ async def test_analytics_with_range_key(ws_hass, store, connection):
     assert "heat_starts" not in result["detail"][0]
     assert "room_temp_max" not in result["detail"][0]
     # read_detail was called with max_age=86400
-    coordinator._history_store.read_detail.assert_any_call("room_a", 86400)
+    coordinator.history_store.read_detail.assert_any_call("room_a", 86400)
 
 
 @pytest.mark.asyncio
@@ -1755,7 +1756,7 @@ async def test_analytics_with_custom_timestamps(ws_hass, store, connection):
         },
     ]
     coordinator = _make_analytics_coordinator(history_rows=csv_rows)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {
         "id": 52,
@@ -1768,7 +1769,7 @@ async def test_analytics_with_custom_timestamps(ws_hass, store, connection):
 
     result = connection.send_result.call_args[0][1]
     assert len(result["detail"]) == 1
-    coordinator._history_store.read_detail.assert_any_call(
+    coordinator.history_store.read_detail.assert_any_call(
         "room_a",
         None,
         1000.0,
@@ -1783,7 +1784,7 @@ async def test_analytics_no_estimator(ws_hass, store, connection):
     await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
 
     coordinator = _make_analytics_coordinator(history_rows=[])
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 53, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1807,7 +1808,7 @@ async def test_analytics_with_estimator(ws_hass, store, connection):
     est = _make_mock_estimator()
 
     coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 54, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1836,7 +1837,7 @@ async def test_analytics_mpc_active_follows_control_mode(ws_hass, store, connect
     await store.async_save_room("room_a", {"thermostats": ["climate.trv1"], "temperature_sensor": "sensor.temp"})
 
     coordinator = _make_analytics_coordinator(history_rows=[], estimator=_make_mock_estimator(n_cooling=0))
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     await _get_analytics(ws_hass, connection, {"id": 56, "type": "roommind/analytics/get", "area_id": "room_a"})
 
@@ -1858,7 +1859,7 @@ async def test_analytics_no_external_sensor_mpc_false(ws_hass, store, connection
     est = _make_mock_estimator(n_cooling=0)
 
     coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 55, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1887,7 +1888,7 @@ async def test_analytics_prediction_disabled(ws_hass, store, connection):
         },
     ]
     coordinator = _make_analytics_coordinator(history_rows=csv_rows)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 56, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1905,7 +1906,7 @@ async def test_analytics_forecast_grid_alignment(ws_hass, store, connection):
     await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
 
     coordinator = _make_analytics_coordinator(history_rows=[])
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 57, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1934,7 +1935,7 @@ async def test_analytics_mold_delta_from_live(ws_hass, store, connection):
         history_rows=[],
         rooms_live={"room_a": {"mold_prevention_delta": 2.0}},
     )
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 58, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1961,7 +1962,7 @@ async def test_analytics_model_has_occupancy_sensors_true(ws_hass, store, connec
 
     est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.5, "Q_occupancy": 0.3})
     coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 60, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -1979,7 +1980,7 @@ async def test_analytics_model_has_occupancy_sensors_false(ws_hass, store, conne
 
     est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.5, "Q_occupancy": 0.3})
     coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 61, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -2146,7 +2147,7 @@ async def test_override_set_triggers_coordinator_refresh(ws_hass, store, connect
 
     mock_coordinator = MagicMock()
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     msg = {
         "id": 1,
@@ -2181,7 +2182,7 @@ async def test_override_clear_triggers_coordinator_refresh(ws_hass, store, conne
 
     mock_coordinator = MagicMock()
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     msg = {"id": 1, "type": "roommind/override/clear", "area_id": "hall"}
     await _override_clear(ws_hass, connection, msg)
@@ -2222,7 +2223,7 @@ async def test_boost_learning_success(ws_hass, store, connection):
 
     mock_coordinator = MagicMock()
     mock_coordinator.boost_learning = MagicMock(return_value=42)
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
     await _boost_learning(ws_hass, connection, msg)
@@ -2240,7 +2241,7 @@ async def test_boost_learning_without_model_errors_and_stores_nothing(ws_hass, s
     await store.async_load()
     mock_coordinator = MagicMock()
     mock_coordinator.boost_learning = MagicMock(return_value=None)
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     msg = {"id": 1, "type": "roommind/model/boost_learning", "area_id": "living_room"}
     await websocket_boost_learning.__wrapped__.__wrapped__(ws_hass, connection, msg)
@@ -2262,7 +2263,7 @@ async def test_resets_and_delete_drop_the_boost_anchor(ws_hass, store, connectio
     for area in ("a", "b", "c"):
         await store.async_save_room(area, {"thermostats": [f"climate.{area}"]})
     await store.async_save_settings({"boost_applied_at": {"a": 10, "b": 20, "c": 30}})
-    ws_hass.data[DOMAIN]["coordinator"] = None
+    wire_coordinator(ws_hass, None)
 
     await websocket_thermal_reset.__wrapped__.__wrapped__(ws_hass, connection, {"id": 1, "area_id": "b"})
     assert store.get_settings()["boost_applied_at"] == {"a": 10, "c": 30}
@@ -3018,27 +3019,27 @@ async def test_get_diagnostics_returns_full_structure(ws_hass, store, connection
     coordinator.rooms = {}
     coordinator.outdoor_temp = 10.0
     coordinator.outdoor_humidity = 60.0
-    coordinator._previous_modes = {}
-    coordinator._mode_on_since = {}
-    coordinator._last_valid_temps = {}
-    coordinator._residual_tracker = MagicMock()
-    coordinator._model_manager = MagicMock()
-    coordinator._model_manager._estimators = {}
-    coordinator._window_manager = MagicMock()
-    coordinator._window_manager._states = {}
+    coordinator.previous_modes = {}
+    coordinator.mode_on_since = {}
+    coordinator.last_valid_temps = {}
+    coordinator.residual_tracker = MagicMock()
+    coordinator.model_manager = MagicMock()
+    coordinator.model_manager._estimators = {}
+    coordinator.window_manager = MagicMock()
+    coordinator.window_manager._states = {}
     coordinator._cover_orchestrator = MagicMock()
     coordinator._cover_orchestrator._cover_managers = {}
-    coordinator._heat_source_states = {}
-    coordinator._weather_manager = MagicMock()
-    coordinator._weather_manager._outdoor_forecast = []
-    coordinator._history_store = None
-    coordinator._compressor_manager = MagicMock()
-    coordinator._compressor_manager._groups = {}
-    coordinator._compressor_manager._member_states = {}
-    coordinator._valve_manager = MagicMock()
-    coordinator._valve_manager._cycling = {}
-    coordinator._valve_manager._last_actuation = {}
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    coordinator.heat_source_states = {}
+    coordinator.weather_manager = MagicMock()
+    coordinator.weather_manager._outdoor_forecast = []
+    coordinator.history_store = None
+    coordinator.compressor_manager = MagicMock()
+    coordinator.compressor_manager._groups = {}
+    coordinator.compressor_manager._member_states = {}
+    coordinator.valve_manager = MagicMock()
+    coordinator.valve_manager._cycling = {}
+    coordinator.valve_manager._last_actuation = {}
+    wire_coordinator(ws_hass, coordinator)
     ws_hass.config = MagicMock()
     ws_hass.config.units = MagicMock()
     ws_hass.config.units.temperature_unit = "°C"
@@ -3083,7 +3084,7 @@ async def test_covers_clear_override_success(ws_hass, store, connection):
     coordinator = MagicMock()
     coordinator.clear_cover_override = MagicMock()
     coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
     msg = {"id": 8, "type": "roommind/covers/clear_override", "area_id": "lr"}
     await _covers_clear_override(ws_hass, connection, msg)
     coordinator.clear_cover_override.assert_called_once_with("lr")
@@ -3414,8 +3415,8 @@ async def test_analytics_model_reports_solar_gain_now_and_today(ws_hass, store, 
     coordinator = _make_analytics_coordinator(
         history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 0.5}}
     )
-    coordinator._current_q_solar = 0.4
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    coordinator.current_q_solar = 0.4
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 62, "type": "roommind/analytics/get", "area_id": "room_a"}
     with patch("custom_components.roommind.services.analytics_service.clear_sky_peak_today", return_value=0.3):
@@ -3454,8 +3455,8 @@ async def test_analytics_model_reports_the_afterglow(ws_hass, store, connection,
     coordinator = _make_analytics_coordinator(
         history_rows=[], estimator=est, rooms_live={"room_a": {"shading_factor": 1.0}}
     )
-    coordinator._current_q_solar = 0.0
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    coordinator.current_q_solar = 0.0
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"}
     with (
@@ -3564,7 +3565,7 @@ async def test_list_rooms_forwards_occupancy_vacant(ws_hass, store, connection):
     mock_coordinator = MagicMock()
     mock_coordinator.rooms = {"office": {"occupancy_vacant": True}}
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -3579,8 +3580,8 @@ async def test_reference_sensor_change_resets_only_affected_model(ws_hass, store
     await store.async_save_room("living", {"temperature_sensor": "sensor.original"})
     coordinator = MagicMock()
     coordinator.async_room_added = AsyncMock()
-    coordinator._model_manager.to_dict.return_value = {"bedroom": {"preserved": True}}
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    coordinator.model_manager.to_dict.return_value = {"bedroom": {"preserved": True}}
+    wire_coordinator(ws_hass, coordinator)
     await _save_room(
         ws_hass, connection, {"id": 1, "type": "roommind/rooms/save", "area_id": "living", "temperature_sensor": sensor}
     )
@@ -3637,7 +3638,7 @@ async def test_analytics_reports_the_price_unit(ws_hass, store, connection):
     price_state.attributes = {"unit_of_measurement": "ct/kWh"}
     ws_hass.states.get = MagicMock(side_effect=lambda eid: price_state if eid == "sensor.strompreis" else None)
     coordinator = _make_analytics_coordinator(history_rows=[])
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     msg = {"id": 64, "type": "roommind/analytics/get", "area_id": "room_a"}
     await _get_analytics(ws_hass, connection, msg)
@@ -3662,7 +3663,7 @@ async def test_list_rooms_includes_recent_temps(ws_hass, store, connection):
     mock_coordinator.async_request_refresh = AsyncMock()
     mock_coordinator.recent_temps = RecentTemps()
     mock_coordinator.recent_temps.add("kitchen", 1000.0, 20.5, 21.0)
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -3764,7 +3765,7 @@ async def test_list_rooms_passes_price_shift_to_the_hero(ws_hass, store, connect
     }
     mock_coordinator.async_request_refresh = AsyncMock()
     mock_coordinator.recent_temps.get.return_value = []
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 
@@ -3790,7 +3791,7 @@ async def test_analytics_model_reports_which_gains_were_observed(ws_hass, store,
     P[4][4] = 2.0  # sun seen
     est = _make_mock_estimator(model_dict={"Q_heat": 3.0, "Q_solar": 0.5, "Q_occupancy": 0.3}, P=P)
     coordinator = _make_analytics_coordinator(history_rows=[], estimator=est)
-    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    wire_coordinator(ws_hass, coordinator)
 
     await _get_analytics(ws_hass, connection, {"id": 63, "type": "roommind/analytics/get", "area_id": "room_a"})
 
@@ -3883,7 +3884,7 @@ async def test_list_rooms_forwards_air_quality(ws_hass, store, connection):
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
-    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+    wire_coordinator(ws_hass, mock_coordinator)
 
     await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
 

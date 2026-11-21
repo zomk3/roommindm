@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.roommind.const import DOMAIN
+from tests.conftest import serve_entry_entities
 
 from .conftest import SAMPLE_ROOM, _create_coordinator, _make_store_mock, make_mock_states_get
 
@@ -181,6 +182,7 @@ async def test_failing_reconcile_does_not_break_the_cycle(hass, mock_config_entr
 def _registry(entries):
     reg = MagicMock()
     reg.entities.values.return_value = entries
+    serve_entry_entities(reg)
     return reg
 
 
@@ -221,7 +223,7 @@ async def test_room_added_creates_the_air_quality_entity_next_to_the_cover_one(h
     hass.data = {DOMAIN: {"store": store}}
     coordinator.async_request_refresh = AsyncMock()
     coordinator.async_add_binary_sensor_entities = MagicMock()
-    coordinator._binary_sensor_entity_areas.add("bed")  # cover sensor already there
+    coordinator.binary_sensor_entity_areas.add("bed")  # cover sensor already there
     with patch("custom_components.roommind.binary_sensor._get_area_name", return_value="Bed"):
         await coordinator.async_room_added({"area_id": "bed", "covers": ["cover.x"], "co2_sensor": CO2})
         await coordinator.async_room_added({"area_id": "bed", "covers": ["cover.x"], "co2_sensor": CO2})
@@ -229,7 +231,7 @@ async def test_room_added_creates_the_air_quality_entity_next_to_the_cover_one(h
     assert [e.unique_id for e in added] == [f"{DOMAIN}_bed_air_quality"]
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=_registry([])):
         coordinator._forget_room("bed")
-    assert "bed" not in coordinator._air_quality_entity_areas
+    assert "bed" not in coordinator.air_quality_entity_areas
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@ import { loadHaElements } from "./load-ha-elements";
 import { noteServerTime } from "./utils/server-clock";
 import { localize } from "./utils/localize";
 import { showToast } from "./utils/toast";
-import { errorText } from "./utils/errors";
+import { errorText, useBackendErrors } from "./utils/errors";
 import { tokens } from "./styles/tokens";
 import { fireSaveStatus } from "./utils/events";
 import { computeAreaInfos, visibleRooms, type AreaInfo } from "./utils/dashboard";
@@ -966,6 +966,7 @@ export class RoomMindPanel extends LitElement {
   }
 
   protected willUpdate(changedProps: Map<string, unknown>) {
+    if (changedProps.has("hass") && this.hass) useBackendErrors(this.hass);
     if (changedProps.has("route") && this._routeApplied) {
       this._applyRoute();
     }

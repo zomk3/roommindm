@@ -71,9 +71,9 @@ async def test_cooling_charges_the_tracker_and_reaches_training_and_controller(h
     assert training.call_args.kwargs["ekf_mode"] == MODE_COOLING
     # the unit was already cooling at startup: the adopted run starts fully charged
     assert training.call_args.kwargs["q_rebound"] == pytest.approx(1.0)
-    assert coordinator._rebound_tracker._cooling[area] is True
+    assert coordinator.rebound_tracker._cooling[area] is True
 
-    coordinator._rebound_tracker._at[area] -= 600
+    coordinator.rebound_tracker._at[area] -= 600
     seen: dict = {}
     real_controller = coordinator_module.MPCController
 
@@ -99,7 +99,7 @@ async def test_ghost_cooling_does_not_charge(hass, mock_config_entry):
     coordinator._ekf_training.process = MagicMock()
 
     await coordinator._async_update_data()
-    assert room["area_id"] not in coordinator._rebound_tracker._at
+    assert room["area_id"] not in coordinator.rebound_tracker._at
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_compressor_hold_with_running_unit_skips_training_and_keeps_chargi
         compressor_held={"climate.living_room"} if hold else None,
     )
     assert training.called is trained
-    assert (coordinator._rebound_tracker._cooling.get(room["area_id"]) is True) is hold
+    assert (coordinator.rebound_tracker._cooling.get(room["area_id"]) is True) is hold
     if hold:
         # a hold resumes without a resync, as before #478 (keeps #436's sim calibration)
         assert coordinator._ekf_training.clear.call_args.kwargs["resync"] is False

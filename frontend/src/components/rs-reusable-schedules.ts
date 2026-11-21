@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, RoomConfig, ReusableSchedule, WeeklyBlock } from "../types";
 import { toDisplay, toCelsius, tempUnit, tempStep } from "../utils/temperature";
 import { localize } from "../utils/localize";
+import { errorText } from "../utils/errors";
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
@@ -68,7 +69,7 @@ export class RsReusableSchedules extends LitElement {
     }
   }
   private _message(err: unknown): string {
-    return typeof err === "object" && err && "message" in err ? String(err.message) : String(err);
+    return errorText(err, String(err), this.hass.language);
   }
   private _weekday(day: string): string {
     return new Intl.DateTimeFormat(this.hass.language, { weekday: "long", timeZone: "UTC" }).format(

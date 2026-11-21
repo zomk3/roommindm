@@ -21,6 +21,7 @@ from .const import (
     DEFAULT_OCCUPANCY_ECO_DELAY_MINUTES,
     DOMAIN,
 )
+from .errors import RoomMindValidationError
 from .utils.device_utils import (
     devices_to_legacy,
     ensure_room_has_devices,
@@ -92,6 +93,8 @@ def _migrate_room(room: dict) -> dict:
     return room
 
 
+# Key of the store in hass.data[DOMAIN]; one store serves the config entry and the websocket API
+DATA_STORE = "store"
 _ORPHAN_SETTINGS_KEYS = ("heating_threshold", "cooling_threshold")
 
 
@@ -196,9 +199,11 @@ class RoomMindStore:
         """
         existing = self._schedules.get(schedule_id)
         if revision != (existing or {}).get("revision", 0):
-            raise ValueError("This schedule changed in another window. Reload it before saving.")
+            raise RoomMindValidationError(
+                "schedule_changed", "This schedule changed in another window. Reload it before saving."
+            )
         if any(area_id not in self._data or self._data[area_id].get("is_outdoor") for area_id in area_ids):
-            raise ValueError("Choose configured indoor rooms only.")
+            raise RoomMindValidationError("schedule_rooms", "Choose configured indoor rooms only.")
         saved = copy.deepcopy(schedule)
         saved["id"] = schedule_id
         saved["revision"] = revision + 1
@@ -219,9 +224,13 @@ class RoomMindStore:
     async def async_delete_schedule(self, schedule_id: str, revision: int) -> None:
         """Delete an unused schedule; assigned rooms must be detached first."""
         if schedule_id not in self._schedules or self._schedules[schedule_id]["revision"] != revision:
-            raise ValueError("This schedule changed in another window. Reload it before deleting.")
+            raise RoomMindValidationError(
+                "schedule_changed_delete", "This schedule changed in another window. Reload it before deleting."
+            )
         if any(room.get("roommind_schedule_id") == schedule_id for room in self._data.values()):
-            raise ValueError("Unassign all rooms and save before deleting this schedule.")
+            raise RoomMindValidationError(
+                "schedule_in_use", "Unassign all rooms and save before deleting this schedule."
+            )
         del self._schedules[schedule_id]
         await self._async_save()
 
@@ -441,3 +450,15 @@ class RoomMindStore:
         self._bump_schedule_revisions({self._data[area_id].get("roommind_schedule_id", "")})
         del self._data[area_id]
         await self._async_save()
+
+
+def get_store(hass: HomeAssistant) -> RoomMindStore:
+    """Return the loaded RoomMind store (shared by the config entry and the websocket API)."""
+    store: RoomMindStore = hass.data[DOMAIN][DATA_STORE]
+    return store
+
+
+def find_store(hass: HomeAssistant) -> RoomMindStore | None:
+    """Return the RoomMind store, None before the integration has loaded it."""
+    store: RoomMindStore | None = hass.data.get(DOMAIN, {}).get(DATA_STORE)
+    return store

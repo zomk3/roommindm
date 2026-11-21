@@ -100,8 +100,8 @@ async def test_cover_auto_switch_turn_on_store_raises_keyerror(mock_coordinator)
 async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     """async_setup_entry creates vacation switch + cover switches for rooms with covers."""
     coordinator = MagicMock()
-    coordinator._switch_entity_areas = set()
-    coordinator._climate_control_switch_areas = set()
+    coordinator.switch_entity_areas = set()
+    coordinator.climate_control_switch_areas = set()
     coordinator.hass = MagicMock()
     coordinator.hass.data = {DOMAIN: {"store": MagicMock()}}
 
@@ -115,7 +115,8 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     entry.entry_id = "test_entry"
 
     hass = MagicMock()
-    hass.data = {DOMAIN: {entry.entry_id: coordinator, "store": store}}
+    hass.data = {DOMAIN: {"store": store}}
+    entry.runtime_data = coordinator
 
     async_add_entities = MagicMock()
 
@@ -131,18 +132,18 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     cover_switches = [e for e in entities if isinstance(e, RoomMindCoverAutoSwitch)]
     assert len(climate_switches) == 2
     assert len(cover_switches) == 1
-    assert "living_room" in coordinator._switch_entity_areas
-    assert "bedroom" not in coordinator._switch_entity_areas
-    assert "living_room" in coordinator._climate_control_switch_areas
-    assert "bedroom" in coordinator._climate_control_switch_areas
+    assert "living_room" in coordinator.switch_entity_areas
+    assert "bedroom" not in coordinator.switch_entity_areas
+    assert "living_room" in coordinator.climate_control_switch_areas
+    assert "bedroom" in coordinator.climate_control_switch_areas
 
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_no_covers_still_creates_vacation_switch():
     """async_setup_entry always creates the global vacation switch even without covers."""
     coordinator = MagicMock()
-    coordinator._switch_entity_areas = set()
-    coordinator._climate_control_switch_areas = set()
+    coordinator.switch_entity_areas = set()
+    coordinator.climate_control_switch_areas = set()
 
     store = MagicMock()
     store.get_rooms.return_value = {"bedroom": {}}
@@ -151,7 +152,8 @@ async def test_async_setup_entry_no_covers_still_creates_vacation_switch():
     entry.entry_id = "test_entry"
 
     hass = MagicMock()
-    hass.data = {DOMAIN: {entry.entry_id: coordinator, "store": store}}
+    hass.data = {DOMAIN: {"store": store}}
+    entry.runtime_data = coordinator
 
     async_add_entities = MagicMock()
 

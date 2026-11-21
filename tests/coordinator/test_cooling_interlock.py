@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from tests.conftest import wire_coordinator
+
 from .conftest import SAMPLE_ROOM, _create_coordinator, _make_store_mock, make_mock_states_get
 
 AC = "climate.external_toshiba"
@@ -55,7 +57,7 @@ async def test_external_cooling_closes_radiator_without_touching_ac(hass, mock_c
     assert not any(d.get("hvac_mode") == "heat" for _, d in climate_calls(hass, TRV))
     assert climate_calls(hass, AC) == []
     coordinator._ekf_training.process.assert_not_called()
-    assert coordinator._model_manager.get_estimator(room["area_id"])._x[0] == 18.0
+    assert coordinator.model_manager.get_estimator(room["area_id"])._x[0] == 18.0
 
 
 async def test_off_by_default_keeps_existing_heating(hass, mock_config_entry):
@@ -81,10 +83,10 @@ async def test_disabled_control_is_respected(hass, mock_config_entry, settings):
 
 async def test_valve_protection_cannot_reopen_blocked_radiator(hass, mock_config_entry):
     coordinator, room = setup(hass, mock_config_entry, settings={"valve_protection_enabled": True})
-    coordinator._valve_manager._cycling[TRV] = 1e20
-    coordinator._valve_manager.should_run_cycle_check = MagicMock(return_value=True)
+    coordinator.valve_manager._cycling[TRV] = 1e20
+    coordinator.valve_manager.should_run_cycle_check = MagicMock(return_value=True)
     await coordinator._async_update_data()
-    assert TRV not in coordinator._valve_manager.cycling_eids
+    assert TRV not in coordinator.valve_manager.cycling_eids
     assert not any(d.get("hvac_mode") == "heat" for _, d in climate_calls(hass, TRV))
     assert coordinator.rooms[room["area_id"]]["heating_blocked_by_cooling"]
 
@@ -118,9 +120,51 @@ async def test_store_round_trip_and_websocket_status(hass):
     assert store.get_room("bedroom")["cooling_interlock_entities"] == [AC]
     coordinator = MagicMock()
     coordinator.rooms = {"bedroom": {"heating_blocked_by_cooling": True, "cooling_interlock_reason": "cooling"}}
-    hass.data = {"roommind": {"store": store, "coordinator": coordinator}}
+    hass.data = {"roommind": {"store": store}}
+    wire_coordinator(hass, coordinator)
     connection = MagicMock()
     await websocket_list_rooms.__wrapped__(hass, connection, {"id": 1})
     live = connection.send_result.call_args.args[1]["rooms"]["bedroom"]["live"]
     assert live["heating_blocked_by_cooling"]
     assert live["cooling_interlock_reason"] == "cooling"
+
+
+def test_cooling_monitors_are_tracked_by_entity_and_follow_the_config(hass, mock_config_entry):
+    """Only the opted-in monitors are tracked (not every state change), re-subscribed when they change."""
+    from unittest.mock import patch
+
+    from .conftest import _create_coordinator
+
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    first_unsub, second_unsub = MagicMock(), MagicMock()
+    rooms = {"bedroom": {"cooling_interlock_entities": [AC]}, "office": {}}
+    with patch(
+        "custom_components.roommind.coordinator.async_track_state_change_event",
+        side_effect=[first_unsub, second_unsub],
+    ) as track:
+        coordinator._async_follow_cooling_monitors(rooms)
+        coordinator._async_follow_cooling_monitors(rooms)  # unchanged: no re-subscribe
+        assert track.call_count == 1
+        assert track.call_args.args[1] == [AC]
+
+        rooms["office"]["cooling_interlock_entities"] = ["climate.office_ac"]
+        coordinator._async_follow_cooling_monitors(rooms)
+        first_unsub.assert_called_once()
+        assert track.call_args.args[1] == [AC, "climate.office_ac"]
+
+        coordinator.async_unsubscribe_cooling_monitors()
+        second_unsub.assert_called_once()
+
+        coordinator._async_follow_cooling_monitors({"bedroom": {}})
+        assert track.call_count == 2  # nothing opted in: nothing to track
+
+
+def test_a_cooling_monitor_change_refreshes_in_the_background(hass, mock_config_entry):
+    from .conftest import _create_coordinator
+
+    coordinator = _create_coordinator(hass, mock_config_entry)
+    coordinator.async_request_refresh = MagicMock(return_value="refresh")
+    coordinator._async_cooling_monitor_changed(MagicMock())
+    mock_config_entry.async_create_background_task.assert_called_once_with(
+        hass, "refresh", "roommind cooling monitor refresh"
+    )

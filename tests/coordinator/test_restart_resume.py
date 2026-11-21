@@ -102,7 +102,7 @@ async def test_running_trv_inside_the_band_keeps_heating_after_a_restart(hass, m
     assert room["mode"] == MODE_HEATING
     assert not _turned_off(hass)
     # the adopted run counts as started now (its real start is unknown)
-    assert AREA in coordinator._mode_on_since
+    assert AREA in coordinator.mode_on_since
 
 
 @pytest.mark.asyncio

@@ -362,6 +362,6 @@ class TestPendingOverrideSeed:
         coordinator.async_request_refresh = AsyncMock()
         hass.data = {"roommind": {"store": _make_store_mock()}}
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("homeassistant.helpers.entity_registry.async_get", lambda _h: MagicMock(entities={}))
+            mp.setattr("homeassistant.helpers.entity_registry.async_get", lambda _h: MagicMock())
             await coordinator.async_room_removed(AC_ROOM_KEY)
         assert AC_ROOM_KEY not in coordinator._override_seeded_at

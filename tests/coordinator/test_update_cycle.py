@@ -8,6 +8,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 import pytest
 
 from custom_components.roommind.const import MODE_IDLE
+from tests.conftest import serve_entry_entities
 
 from .conftest import (
     SAMPLE_ROOM,
@@ -31,9 +32,9 @@ class TestRoomMindCoordinator:
         coordinator = _create_coordinator(hass, mock_config_entry)
         assert coordinator is not None
         assert coordinator.rooms == {}
-        assert isinstance(coordinator._model_manager, RoomModelManager)
+        assert isinstance(coordinator.model_manager, RoomModelManager)
         assert coordinator.update_interval == timedelta(seconds=UPDATE_INTERVAL)
-        assert coordinator._history_store is None
+        assert coordinator.history_store is None
         assert coordinator._thermal_save_count == 0
         assert coordinator._history_write_count == 0
         assert coordinator._pending_predictions == {}
@@ -289,6 +290,7 @@ class TestRoomMindCoordinator:
         mock_registry = MagicMock()
         mock_registry.entities = MagicMock()
         mock_registry.entities.values.return_value = [entity1, entity2, other_entity]
+        serve_entry_entities(mock_registry)
 
         with patch(
             "homeassistant.helpers.entity_registry.async_get",
@@ -354,7 +356,7 @@ class TestRoomMindCoordinator:
         hass.async_add_executor_job.reset_mock()
         mock_history = MagicMock()
         mock_history.record = MagicMock()
-        coordinator._history_store = mock_history
+        coordinator.history_store = mock_history
         coordinator._history_write_count = HISTORY_WRITE_CYCLES - 1
 
         await coordinator._async_update_data()
@@ -403,12 +405,35 @@ class TestCoverageGaps:
         await coordinator._async_update_data()
 
         # Verify the model was loaded from store (estimator exists with prior data)
-        est = coordinator._model_manager.get_estimator("living_room_abc12345")
+        est = coordinator.model_manager.get_estimator("living_room_abc12345")
         assert est._n_updates >= 1
 
     @pytest.mark.asyncio
     async def test_process_room_exception_skips_room(self, hass, mock_config_entry):
-        """Exception in _async_process_room is caught and room is skipped."""
+        """A failing room is skipped and logged; the other rooms are still controlled."""
+        other = {**SAMPLE_ROOM, "area_id": "office"}
+        store = _make_store_mock({"living_room_abc12345": SAMPLE_ROOM, "office": other})
+        hass.data = {"roommind": {"store": store}}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get())
+        hass.services.async_call = AsyncMock()
+
+        coordinator = _create_coordinator(hass, mock_config_entry)
+
+        async def fail_living_room(room, *_args):
+            if room["area_id"] == "living_room_abc12345":
+                raise RuntimeError("boom")
+            return {"mode": "idle"}
+
+        with patch.object(coordinator, "_async_process_room", side_effect=fail_living_room):
+            data = await coordinator._async_update_data()
+
+        assert set(data["rooms"]) == {"office"}
+
+    @pytest.mark.asyncio
+    async def test_every_room_failing_fails_the_update(self, hass, mock_config_entry):
+        """Entities go unavailable instead of showing the previous cycle as current."""
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
         store = _make_store_mock({"living_room_abc12345": SAMPLE_ROOM})
         hass.data = {"roommind": {"store": store}}
         hass.states.get = MagicMock(side_effect=make_mock_states_get())
@@ -416,10 +441,14 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
 
-        with patch.object(coordinator, "_async_process_room", side_effect=RuntimeError("boom")):
-            data = await coordinator._async_update_data()
+        with (
+            patch.object(coordinator, "_async_process_room", side_effect=RuntimeError("boom")),
+            pytest.raises(UpdateFailed) as err,
+        ):
+            await coordinator._async_update_data()
 
-        assert data["rooms"] == {}
+        assert err.value.translation_key == "update_failed"
+        assert err.value.translation_placeholders == {"rooms": "living_room_abc12345"}
 
     @pytest.mark.asyncio
     async def test_history_skip_learning_disabled_rooms(self, hass, mock_config_entry):
@@ -475,7 +504,7 @@ class TestCoverageGaps:
         # Set up a mock history store so rotate is actually called
         mock_history = MagicMock()
         mock_history.rotate = MagicMock()
-        coordinator._history_store = mock_history
+        coordinator.history_store = mock_history
 
         coordinator._history_rotate_count = HISTORY_ROTATE_CYCLES - 1
         await coordinator._async_update_data()
@@ -500,13 +529,13 @@ class TestCoverageGaps:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager.actuation_dirty = True
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time()
+        coordinator.valve_manager.actuation_dirty = True
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time()
         coordinator._thermal_save_count = THERMAL_SAVE_CYCLES - 1
         await coordinator._async_update_data()
 
         store.async_save_settings.assert_called()
-        assert coordinator._valve_manager.actuation_dirty is False
+        assert coordinator.valve_manager.actuation_dirty is False
 
     @pytest.mark.asyncio
     async def test_device_temp_fallback_no_external_sensor(self, hass, mock_config_entry):
@@ -594,12 +623,12 @@ class TestCoverageGaps:
         coordinator._history_write_count = HISTORY_WRITE_CYCLES - 1
 
         # Make model.predict raise an exception
-        coordinator._model_manager.predict_window_open = MagicMock(side_effect=RuntimeError("boom"))
+        coordinator.model_manager.predict_window_open = MagicMock(side_effect=RuntimeError("boom"))
         mock_model = MagicMock()
         mock_model.predict.side_effect = RuntimeError("boom")
         mock_model.Q_heat = 1.0
         mock_model.Q_cool = 1.0
-        coordinator._model_manager.get_model = MagicMock(return_value=mock_model)
+        coordinator.model_manager.get_model = MagicMock(return_value=mock_model)
 
         # Should not raise -- exception is silently caught
         result = await coordinator._async_update_data()
@@ -626,7 +655,7 @@ class TestCoverageGaps:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Pre-train model with low std for MPC activation
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         mgr.update("mpc_room", 18.0, 5.0, "heating", 5.0)
         mgr.update("mpc_room", 18.5, 5.0, "heating", 5.0)
 
@@ -680,7 +709,7 @@ class TestCoverageGaps:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         mgr.get_prediction_std = MagicMock(return_value=0.1)
         mgr.get_mode_counts = MagicMock(return_value=(100, 30, 30))
 
@@ -720,7 +749,7 @@ class TestCoverageGaps:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        mgr = coordinator._model_manager
+        mgr = coordinator.model_manager
         mgr.get_prediction_std = MagicMock(return_value=0.1)
         mgr.get_mode_counts = MagicMock(return_value=counts)
 

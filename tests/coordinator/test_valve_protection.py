@@ -29,11 +29,11 @@ class TestValveProtection:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Force the check counter to trigger
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
         # No valve cycling should have started
-        assert len(coordinator._valve_manager._cycling) == 0
+        assert len(coordinator.valve_manager._cycling) == 0
 
     @pytest.mark.asyncio
     async def test_valve_protection_cycles_stale_valve(self, hass, mock_config_entry):
@@ -50,13 +50,13 @@ class TestValveProtection:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # TRV was last used 8 days ago
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
         # Trigger check
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
         # Valve should be cycling
-        assert "climate.living_room" in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
 
         # Verify heat + temperature service calls for the cycling valve
         climate_calls = [
@@ -81,16 +81,16 @@ class TestValveProtection:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Simulate: valve has been cycling for 20 seconds (exceeds 15s)
-        coordinator._valve_manager._cycling["climate.living_room"] = time.time() - 20
-        old_actuation = coordinator._valve_manager._last_actuation.get("climate.living_room", 0)
+        coordinator.valve_manager._cycling["climate.living_room"] = time.time() - 20
+        old_actuation = coordinator.valve_manager._last_actuation.get("climate.living_room", 0)
 
         await coordinator._async_update_data()
 
         # Valve should no longer be cycling
-        assert "climate.living_room" not in coordinator._valve_manager._cycling
+        assert "climate.living_room" not in coordinator.valve_manager._cycling
         # Actuation timestamp should be updated
-        assert coordinator._valve_manager._last_actuation["climate.living_room"] > old_actuation
-        assert coordinator._valve_manager._actuation_dirty is True
+        assert coordinator.valve_manager._last_actuation["climate.living_room"] > old_actuation
+        assert coordinator.valve_manager._actuation_dirty is True
 
         # Verify off command was sent
         off_calls = [
@@ -122,10 +122,10 @@ class TestValveProtection:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
-        assert "climate.living_room" not in coordinator._valve_manager._cycling
+        assert "climate.living_room" not in coordinator.valve_manager._cycling
 
     @pytest.mark.asyncio
     async def test_valve_protection_excludes_cycling_from_apply(self, hass, mock_config_entry):
@@ -139,7 +139,7 @@ class TestValveProtection:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Valve is currently being cycled (started 5 seconds ago, still within 15s)
-        coordinator._valve_manager._cycling["climate.living_room"] = time.time() - 5
+        coordinator.valve_manager._cycling["climate.living_room"] = time.time() - 5
 
         await coordinator._async_update_data()
 
@@ -160,7 +160,7 @@ class TestValveProtection:
         ]
         assert len(climate_off_calls) == 0
         # Valve should still be cycling
-        assert "climate.living_room" in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
 
     @pytest.mark.asyncio
     async def test_valve_protection_runs_when_climate_off(self, hass, mock_config_entry):
@@ -177,11 +177,11 @@ class TestValveProtection:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
-        assert "climate.living_room" in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
 
     @pytest.mark.asyncio
     async def test_valve_protection_only_trvs(self, hass, mock_config_entry):
@@ -206,14 +206,14 @@ class TestValveProtection:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Both TRV and AC idle for 8 days
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
-        coordinator._valve_manager._last_actuation["climate.living_room_ac"] = time.time() - 8 * 86400
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
+        coordinator.valve_manager._last_actuation["climate.living_room_ac"] = time.time() - 8 * 86400
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
         # Only TRV should be cycled, not AC
-        assert "climate.living_room" in coordinator._valve_manager._cycling
-        assert "climate.living_room_ac" not in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
+        assert "climate.living_room_ac" not in coordinator.valve_manager._cycling
 
     @pytest.mark.asyncio
     async def test_valve_actuation_updated_on_heating(self, hass, mock_config_entry):
@@ -225,13 +225,13 @@ class TestValveProtection:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        assert "climate.living_room" not in coordinator._valve_manager._last_actuation
+        assert "climate.living_room" not in coordinator.valve_manager._last_actuation
 
         await coordinator._async_update_data()
 
         # Room heats (18degC < 21degC target), so actuation should be tracked
-        assert "climate.living_room" in coordinator._valve_manager._last_actuation
-        assert coordinator._valve_manager._actuation_dirty is True
+        assert "climate.living_room" in coordinator.valve_manager._last_actuation
+        assert coordinator.valve_manager._actuation_dirty is True
 
     @pytest.mark.asyncio
     async def test_valve_protection_custom_interval(self, hass, mock_config_entry):
@@ -247,11 +247,11 @@ class TestValveProtection:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time() - 4 * 86400
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time() - 4 * 86400
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
-        assert "climate.living_room" in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
 
     @pytest.mark.asyncio
     async def test_valve_protection_cleanup_stale_entities(self, hass, mock_config_entry):
@@ -272,11 +272,11 @@ class TestValveProtection:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
-        assert "climate.old_thermostat" not in coordinator._valve_manager._last_actuation
-        assert "climate.living_room" in coordinator._valve_manager._last_actuation
+        assert "climate.old_thermostat" not in coordinator.valve_manager._last_actuation
+        assert "climate.living_room" in coordinator.valve_manager._last_actuation
 
     @pytest.mark.asyncio
     async def test_valve_protection_auto_only_thermostat(self, hass, mock_config_entry):
@@ -309,11 +309,11 @@ class TestValveProtection:
         hass.services.async_call = AsyncMock()
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        coordinator._valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
-        coordinator._valve_manager._check_count = 119
+        coordinator.valve_manager._last_actuation["climate.living_room"] = time.time() - 8 * 86400
+        coordinator.valve_manager._check_count = 119
         await coordinator._async_update_data()
 
-        assert "climate.living_room" in coordinator._valve_manager._cycling
+        assert "climate.living_room" in coordinator.valve_manager._cycling
         climate_calls = [
             c
             for c in hass.services.async_call.call_args_list
@@ -331,7 +331,7 @@ class TestValveProtectionFinish:
     async def test_no_cycling_is_noop(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         # No cycling entries -> should return immediately
-        await coordinator._valve_manager.async_finish_cycles()
+        await coordinator.valve_manager.async_finish_cycles()
         hass.services.async_call.assert_not_called()
 
     @pytest.mark.asyncio
@@ -339,25 +339,25 @@ class TestValveProtectionFinish:
         coordinator = _create_coordinator(hass, mock_config_entry)
         hass.services.async_call = AsyncMock()
         # Valve has been cycling for longer than VALVE_PROTECTION_CYCLE_DURATION
-        coordinator._valve_manager._cycling["climate.trv1"] = time.time() - 120
+        coordinator.valve_manager._cycling["climate.trv1"] = time.time() - 120
 
-        await coordinator._valve_manager.async_finish_cycles()
+        await coordinator.valve_manager.async_finish_cycles()
 
-        assert "climate.trv1" not in coordinator._valve_manager._cycling
-        assert "climate.trv1" in coordinator._valve_manager._last_actuation
-        assert coordinator._valve_manager._actuation_dirty is True
+        assert "climate.trv1" not in coordinator.valve_manager._cycling
+        assert "climate.trv1" in coordinator.valve_manager._last_actuation
+        assert coordinator.valve_manager._actuation_dirty is True
 
     @pytest.mark.asyncio
     async def test_finish_exception_still_cleans_up(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         hass.services.async_call = AsyncMock(side_effect=RuntimeError("fail"))
-        coordinator._valve_manager._cycling["climate.trv1"] = time.time() - 120
+        coordinator.valve_manager._cycling["climate.trv1"] = time.time() - 120
 
-        await coordinator._valve_manager.async_finish_cycles()
+        await coordinator.valve_manager.async_finish_cycles()
 
         # Still cleaned up despite exception
-        assert "climate.trv1" not in coordinator._valve_manager._cycling
-        assert "climate.trv1" in coordinator._valve_manager._last_actuation
+        assert "climate.trv1" not in coordinator.valve_manager._cycling
+        assert "climate.trv1" in coordinator.valve_manager._last_actuation
 
 
 class TestValveProtectionCheck:
@@ -367,12 +367,12 @@ class TestValveProtectionCheck:
     async def test_disabled_clears_active_cycles(self, hass, mock_config_entry):
         coordinator = _create_coordinator(hass, mock_config_entry)
         hass.services.async_call = AsyncMock()
-        coordinator._valve_manager._cycling["climate.trv1"] = time.time()
+        coordinator.valve_manager._cycling["climate.trv1"] = time.time()
 
         settings = {"valve_protection_enabled": False}
-        await coordinator._valve_manager.async_check_and_cycle({}, settings)
+        await coordinator.valve_manager.async_check_and_cycle({}, settings)
 
-        assert len(coordinator._valve_manager._cycling) == 0
+        assert len(coordinator.valve_manager._cycling) == 0
 
     @pytest.mark.asyncio
     async def test_starts_cycling_stale_valve(self, hass, mock_config_entry):
@@ -391,11 +391,11 @@ class TestValveProtectionCheck:
         settings = {"valve_protection_enabled": True, "valve_protection_interval_days": 7}
 
         # Valve was last actuated > 7 days ago
-        coordinator._valve_manager._last_actuation["climate.trv1"] = time.time() - 8 * 86400
+        coordinator.valve_manager._last_actuation["climate.trv1"] = time.time() - 8 * 86400
 
-        await coordinator._valve_manager.async_check_and_cycle(rooms, settings)
+        await coordinator.valve_manager.async_check_and_cycle(rooms, settings)
 
-        assert "climate.trv1" in coordinator._valve_manager._cycling
+        assert "climate.trv1" in coordinator.valve_manager._cycling
         assert hass.services.async_call.call_count >= 1
 
     @pytest.mark.asyncio
@@ -412,10 +412,10 @@ class TestValveProtectionCheck:
         settings = {"valve_protection_enabled": True, "valve_protection_interval_days": 7}
 
         # Already cycling
-        coordinator._valve_manager._cycling["climate.trv1"] = time.time()
-        coordinator._valve_manager._last_actuation["climate.trv1"] = time.time() - 8 * 86400
+        coordinator.valve_manager._cycling["climate.trv1"] = time.time()
+        coordinator.valve_manager._last_actuation["climate.trv1"] = time.time() - 8 * 86400
 
-        await coordinator._valve_manager.async_check_and_cycle(rooms, settings)
+        await coordinator.valve_manager.async_check_and_cycle(rooms, settings)
 
         # Should not call any service (already cycling)
         hass.services.async_call.assert_not_called()
@@ -426,7 +426,7 @@ class TestValveProtectionCheck:
         hass.services.async_call = AsyncMock()
 
         # Entity in actuation dict but not in any room
-        coordinator._valve_manager._last_actuation["climate.old_trv"] = time.time()
+        coordinator.valve_manager._last_actuation["climate.old_trv"] = time.time()
         rooms = {
             "room_a": {
                 "thermostats": ["climate.trv1"],
@@ -435,10 +435,10 @@ class TestValveProtectionCheck:
         }
         settings = {"valve_protection_enabled": True, "valve_protection_interval_days": 7}
 
-        await coordinator._valve_manager.async_check_and_cycle(rooms, settings)
+        await coordinator.valve_manager.async_check_and_cycle(rooms, settings)
 
-        assert "climate.old_trv" not in coordinator._valve_manager._last_actuation
-        assert coordinator._valve_manager._actuation_dirty is True
+        assert "climate.old_trv" not in coordinator.valve_manager._last_actuation
+        assert coordinator.valve_manager._actuation_dirty is True
 
 
 class TestValveProtectionRespectsIdleAction:
@@ -465,14 +465,14 @@ class TestValveProtectionRespectsIdleAction:
         hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
 
         # Simulate a finished cycle
-        coordinator._valve_manager._cycling["climate.trv_low"] = time.time() - 120
+        coordinator.valve_manager._cycling["climate.trv_low"] = time.time() - 120
 
         devices = [
             {"entity_id": "climate.trv_low", "type": "trv", "role": "auto", "idle_action": "low"},
         ]
         rooms_devices_map = {"climate.trv_low": devices}
 
-        await coordinator._valve_manager.async_finish_cycles(rooms_devices_map)
+        await coordinator.valve_manager.async_finish_cycles(rooms_devices_map)
 
         calls = hass.services.async_call.call_args_list
         # set_temperature with min_temp must be sent
@@ -498,7 +498,7 @@ class TestValveProtectionRespectsIdleAction:
         hass.services.async_call = AsyncMock()
         hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
 
-        coordinator._valve_manager._cycling["climate.trv_low"] = time.time()
+        coordinator.valve_manager._cycling["climate.trv_low"] = time.time()
         rooms = {
             "room_a": {
                 "devices": [
@@ -508,9 +508,9 @@ class TestValveProtectionRespectsIdleAction:
         }
         settings = {"valve_protection_enabled": False}
 
-        await coordinator._valve_manager.async_check_and_cycle(rooms, settings)
+        await coordinator.valve_manager.async_check_and_cycle(rooms, settings)
 
-        assert len(coordinator._valve_manager._cycling) == 0
+        assert len(coordinator.valve_manager._cycling) == 0
         calls = hass.services.async_call.call_args_list
         temp_calls = [
             c for c in calls if c[0][1] == "set_temperature" and c[0][2].get("entity_id") == "climate.trv_low"
@@ -533,10 +533,10 @@ class TestValveProtectionRespectsIdleAction:
         hass.services.async_call = AsyncMock()
         hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
 
-        coordinator._valve_manager._cycling["climate.trv1"] = time.time() - 120
+        coordinator.valve_manager._cycling["climate.trv1"] = time.time() - 120
 
         # No rooms_devices parameter -> legacy turn-off path
-        await coordinator._valve_manager.async_finish_cycles()
+        await coordinator.valve_manager.async_finish_cycles()
 
         off_calls = [
             c
@@ -554,13 +554,13 @@ class TestValveProtectionRespectsIdleAction:
         hass.services.async_call = AsyncMock()
         hass.states.get = MagicMock(return_value=self._trv_state(min_temp=5.0))
 
-        coordinator._valve_manager._cycling["climate.trv_off"] = time.time() - 120
+        coordinator.valve_manager._cycling["climate.trv_off"] = time.time() - 120
         devices = [
             {"entity_id": "climate.trv_off", "type": "trv", "role": "auto", "idle_action": "off"},
         ]
         rooms_devices_map = {"climate.trv_off": devices}
 
-        await coordinator._valve_manager.async_finish_cycles(rooms_devices_map)
+        await coordinator.valve_manager.async_finish_cycles(rooms_devices_map)
 
         off_calls = [
             c
@@ -588,13 +588,13 @@ class TestValveProtectionRespectsIdleAction:
         }
         hass.states.get = MagicMock(return_value=broken_state)
 
-        coordinator._valve_manager._cycling["climate.trv_low"] = time.time() - 120
+        coordinator.valve_manager._cycling["climate.trv_low"] = time.time() - 120
         devices = [
             {"entity_id": "climate.trv_low", "type": "trv", "role": "auto", "idle_action": "low"},
         ]
         rooms_devices_map = {"climate.trv_low": devices}
 
-        await coordinator._valve_manager.async_finish_cycles(rooms_devices_map)
+        await coordinator.valve_manager.async_finish_cycles(rooms_devices_map)
 
         calls = hass.services.async_call.call_args_list
         # Fallback = DEFAULT_COMFORT_HEAT (21) - DEFAULT_IDLE_SETBACK_OFFSET (2) = 19

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,10 +13,9 @@ from homeassistant.components.frontend import (
     add_extra_js_url,
     async_register_built_in_panel,
     async_remove_panel,
+    remove_extra_js_url,
 )
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
@@ -24,9 +24,9 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS, VERSION
 from .control.direct_valve import async_release_all_valves, clear_valve_cache
-from .coordinator import RoomMindCoordinator
+from .coordinator import RoomMindConfigEntry, RoomMindCoordinator
 from .deprecation import async_schedule_deprecation_check
-from .store import RoomMindStore
+from .store import DATA_STORE, RoomMindStore, find_store, get_store
 from .utils.area_utils import rooms_with_area
 from .utils.device_utils import configured_valves
 from .websocket_api import async_pause_room, async_register_websocket_commands, async_resume_room
@@ -36,6 +36,8 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 CARD_URL = "/roommind/roommind-card.js"
+DATA_CARD_REGISTERED = "card_registered"
+DATA_PANEL_REGISTERED = "panel_registered"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -45,33 +47,25 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: RoomMindConfigEntry) -> bool:
     """Set up RoomMind from a config entry."""
-    # Ensure the store is created and loaded (once across all entries)
-    store = hass.data[DOMAIN].get("store")
-    if not store:
+    # The store outlives a reload: the websocket API (registered once in async_setup) reads it too
+    if find_store(hass) is None:
         await _async_migrate_storage(hass)
         store = RoomMindStore(hass)
         await store.async_load()
-        hass.data[DOMAIN]["store"] = store
+        hass.data[DOMAIN][DATA_STORE] = store
 
     clear_valve_cache()  # after an unload, which stopped valve control
     coordinator = RoomMindCoordinator(hass, entry)
     # Before the first refresh: its commands are what later setpoint changes are judged against (#259)
     entry.async_on_unload(coordinator.device_setpoints.async_track(hass))
+    # Opted-in cooling monitors refresh at once, including app writes; the coordinator follows the room config
+    entry.async_on_unload(coordinator.async_unsubscribe_cooling_monitors)
     await coordinator.async_config_entry_first_refresh()
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-    hass.data[DOMAIN]["coordinator"] = coordinator
+    entry.runtime_data = coordinator
 
-    @callback
-    def cooling_state_changed(event: Event) -> None:
-        """Refresh when an opted-in cooling monitor changes, including app writes."""
-        entity_id = event.data.get("entity_id")
-        if any(entity_id in room.get("cooling_interlock_entities", []) for room in store.get_rooms().values()):
-            hass.async_create_task(coordinator.async_request_refresh())
-
-    entry.async_on_unload(hass.bus.async_listen(EVENT_STATE_CHANGED, cooling_state_changed))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(async_track_area_changes(hass))
 
@@ -91,7 +85,7 @@ def async_track_area_changes(hass: HomeAssistant) -> Callable[[], None]:
 
     async def _async_area_updated(event: Event[ar.EventAreaRegistryUpdatedData]) -> None:
         area_id = event.data["area_id"]
-        if hass.data[DOMAIN]["store"].get_room(area_id) is None:
+        if get_store(hass).get_room(area_id) is None:
             return
         if event.data["action"] == "remove":
             _LOGGER.info("Area '%s' was deleted, its room rests until the area is back or it is deleted", area_id)
@@ -129,8 +123,6 @@ def _migrate_storage_sync(storage_dir: Path) -> None:
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Failed to migrate storage key")
     # Migrate history CSV directory
-    import shutil
-
     old_history = storage_dir / "roomsense_history"
     new_history = storage_dir / "roommind_history"
     if old_history.exists():
@@ -154,19 +146,13 @@ def _migrate_storage_sync(storage_dir: Path) -> None:
             _LOGGER.info("Merged old history into 'roommind_history'")
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: RoomMindConfigEntry) -> bool:
     """Unload a RoomMind config entry."""
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         await _async_release_all_valves(hass)
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
-        hass.data[DOMAIN].pop("coordinator", None)
-
-    # Remove panel if no entries remain
-    if not hass.data[DOMAIN]:
-        async_remove_panel(hass, "roommind")
-
+        # Single config entry: nothing is left to show in the sidebar or on dashboards
+        _async_unregister_frontend(hass)
     return unload_ok
 
 
@@ -175,7 +161,7 @@ async def _async_release_all_valves(hass: HomeAssistant) -> None:
 
     A reload pins them again on the next cycle.
     """
-    store = hass.data.get(DOMAIN, {}).get("store")
+    store = find_store(hass)
     await async_release_all_valves(
         hass, configured_valves(rooms_with_area(hass, store.get_rooms())) if store is not None else {}
     )
@@ -222,7 +208,7 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 
     The version query makes browsers fetch the new card after an update.
     """
-    if hass.data[DOMAIN].get("card_registered"):
+    if hass.data[DOMAIN].get(DATA_CARD_REGISTERED):
         return
 
     card_js = Path(__file__).parent / "frontend" / "roommind-card.js"
@@ -235,8 +221,8 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     except RuntimeError:
         _LOGGER.debug("RoomMind card static path already registered")
 
-    add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
-    hass.data[DOMAIN]["card_registered"] = True
+    add_extra_js_url(hass, _card_url())
+    hass.data[DOMAIN][DATA_CARD_REGISTERED] = True
 
 
 async def _async_register_panel(hass: HomeAssistant) -> None:
@@ -245,7 +231,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     The content hash query (the version when the bundle cannot be read) makes browsers fetch
     the new panel after an update instead of a cached one.
     """
-    if hass.data[DOMAIN].get("panel_registered"):
+    if hass.data[DOMAIN].get(DATA_PANEL_REGISTERED):
         return
 
     panel_js = Path(__file__).parent / "frontend" / "roommind-panel.js"
@@ -287,5 +273,22 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     except ValueError:
         _LOGGER.debug("RoomMind panel already registered")
 
-    hass.data[DOMAIN]["panel_registered"] = True
+    hass.data[DOMAIN][DATA_PANEL_REGISTERED] = True
     _LOGGER.info("RoomMind panel registered in sidebar")
+
+
+def _card_url() -> str:
+    """URL of the dashboard card, with the version query that busts browser caches."""
+    return f"{CARD_URL}?v={VERSION}"
+
+
+@callback
+def _async_unregister_frontend(hass: HomeAssistant) -> None:
+    """Take the sidebar panel and the dashboard card away again; the next setup adds them back.
+
+    The static paths stay registered: aiohttp cannot remove a route, and registering it again is skipped.
+    """
+    if hass.data[DOMAIN].pop(DATA_PANEL_REGISTERED, False):
+        async_remove_panel(hass, "roommind")
+    if hass.data[DOMAIN].pop(DATA_CARD_REGISTERED, False):
+        remove_extra_js_url(hass, _card_url())

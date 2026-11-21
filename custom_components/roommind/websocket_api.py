@@ -36,12 +36,14 @@ from .const import (
     is_override_suppressed,
 )
 from .control.direct_valve import async_release_valve
+from .errors import RoomMindValidationError
 from .services.analytics_service import (
     _compute_target_forecast,  # noqa: F401 - re-exported for tests
     _csv_to_points,  # noqa: F401 - re-exported for tests
     _safe_float,  # noqa: F401 - re-exported for tests
     build_analytics_data,
 )
+from .store import get_store
 from .utils.area_utils import REST_SWITCHED_OFF, rooms_without_area
 from .utils.device_utils import (
     COIL_DRY_INHERIT,
@@ -113,10 +115,41 @@ if TYPE_CHECKING:
     from .store import RoomMindStore
 
 
+def _send_error(
+    connection: ActiveConnection, msg_id: int, code: str, key: str, template: str, **placeholders: str
+) -> None:
+    """Send an error the panel shows translated (exceptions.<key> in strings.json), English otherwise."""
+    connection.send_error(
+        msg_id,
+        code,
+        template.format(**placeholders),
+        translation_key=key,
+        translation_domain=DOMAIN,
+        translation_placeholders=placeholders or None,
+    )
+
+
+def _send_validation_error(connection: ActiveConnection, msg_id: int, code: str, err: Exception) -> None:
+    """Send a rejected input; a RoomMindValidationError carries its translation."""
+    if isinstance(err, RoomMindValidationError):
+        connection.send_error(
+            msg_id,
+            code,
+            str(err),
+            translation_key=err.translation_key,
+            translation_domain=DOMAIN,
+            translation_placeholders=err.translation_placeholders or None,
+        )
+        return
+    connection.send_error(msg_id, code, str(err))
+
+
 def _get_coordinator(hass: HomeAssistant) -> RoomMindCoordinator | None:
-    """Return the RoomMindCoordinator from hass.data, or None."""
-    coordinator: RoomMindCoordinator | None = hass.data.get(DOMAIN, {}).get("coordinator")
-    return coordinator
+    """Return the coordinator of the loaded config entry, None while RoomMind is not set up."""
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator: RoomMindCoordinator = entry.runtime_data
+        return coordinator
+    return None
 
 
 _ROOM_SAVE_FIELDS = (
@@ -286,16 +319,22 @@ def _compute_anyone_home(hass: HomeAssistant, settings: dict) -> bool:
     return not is_presence_away(hass, {}, settings)  # all away
 
 
-def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
-    """Check that no RoomMind-owned entities are assigned. Returns error message or None."""
+def _own_entity_error(entity_id: str) -> RoomMindValidationError:
+    return RoomMindValidationError(
+        "own_entity", "Cannot assign RoomMind's own entity '{entity_id}' to a room", entity_id=entity_id
+    )
+
+
+def _validate_no_own_entities(config: dict, own_prefix: str) -> RoomMindValidationError | None:
+    """Check that no RoomMind-owned entities are assigned. Returns the error or None."""
     for field in ("thermostats", "acs", "window_sensors", "covers", "occupancy_sensors"):
         for eid in config.get(field, []):
             if eid.split(".", 1)[-1].startswith(own_prefix):
-                return f"Cannot assign RoomMind's own entity '{eid}' to a room"
+                return _own_entity_error(eid)
     for device in config.get("devices", []):
         eid = device.get("entity_id", "")
         if eid.split(".", 1)[-1].startswith(own_prefix):
-            return f"Cannot assign RoomMind's own entity '{eid}' to a room"
+            return _own_entity_error(eid)
     for field in (
         "temperature_sensor",
         "humidity_sensor",
@@ -306,15 +345,15 @@ def _validate_no_own_entities(config: dict, own_prefix: str) -> str | None:
     ):
         eid = config.get(field, "")
         if eid and eid.split(".", 1)[-1].startswith(own_prefix):
-            return f"Cannot assign RoomMind's own entity '{eid}' to a room"
+            return _own_entity_error(eid)
     return None
 
 
-def _validate_no_duplicate_devices(config: dict) -> str | None:
-    """Check for duplicate entity_ids in devices[]. Returns error message or None."""
+def _validate_no_duplicate_devices(config: dict) -> RoomMindValidationError | None:
+    """Check for duplicate entity_ids in devices[]. Returns the error or None."""
     device_eids = [d["entity_id"] for d in config.get("devices", [])]
     if len(device_eids) != len(set(device_eids)):
-        return "devices[] contains duplicate entity_ids"
+        return RoomMindValidationError("duplicate_devices", "devices[] contains duplicate entity_ids")
     return None
 
 
@@ -331,7 +370,7 @@ async def websocket_list_rooms(
     msg: dict,
 ) -> None:
     """Return all rooms with current state."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     rooms = store.get_rooms()
 
     # Merge live state from coordinator
@@ -615,7 +654,7 @@ async def websocket_save_room(
     msg: dict,
 ) -> None:
     """Create or update a room configuration."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     area_id = msg["area_id"]
 
     # Build config dict from optional fields present in the message
@@ -627,16 +666,30 @@ async def websocket_save_room(
     # Non-admins (dashboard card) may change targets, mode and control of an existing room only
     user = connection.user
     if (user is None or not user.is_admin) and (store.get_room(area_id) is None or set(config) - _USER_ROOM_FIELDS):
-        connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "Only administrators can change this")
+        _send_error(
+            connection, msg["id"], websocket_api.ERR_UNAUTHORIZED, "admin_only", "Only administrators can change this"
+        )
         return
     merged = {**(store.get_room(area_id) or {}), **config}
     if merged.get("dehumidifier_lower_bound", 50) >= merged.get("dehumidifier_upper_bound", 60):
-        connection.send_error(msg["id"], "invalid_humidity_bounds", "Lower humidity bound must be below upper bound")
+        _send_error(
+            connection,
+            msg["id"],
+            "invalid_humidity_bounds",
+            "humidity_bounds",
+            "Lower humidity bound must be below upper bound",
+        )
         return
     if merged.get("dehumidifier_enabled") and (
         not merged.get("dehumidifier_entity") or not merged.get("humidity_sensor")
     ):
-        connection.send_error(msg["id"], "invalid_dehumidifier", "Select a dehumidifier and humidity sensor first")
+        _send_error(
+            connection,
+            msg["id"],
+            "invalid_dehumidifier",
+            "dehumidifier_incomplete",
+            "Select a dehumidifier and humidity sensor first",
+        )
         return
 
     entity = merged.get("dehumidifier_entity")
@@ -644,23 +697,31 @@ async def websocket_save_room(
         other_id != area_id and other.get("dehumidifier_entity") == entity
         for other_id, other in store.get_rooms().items()
     ):
-        connection.send_error(msg["id"], "duplicate_entity", "This dehumidifier is already assigned to another room")
+        _send_error(
+            connection,
+            msg["id"],
+            "duplicate_entity",
+            "dehumidifier_taken",
+            "This dehumidifier is already assigned to another room",
+        )
         return
 
     # Reject RoomMind's own entities to prevent self-assignment (#86)
     own_prefix = f"{DOMAIN}_"
     err = _validate_no_own_entities(config, own_prefix)
     if err:
-        connection.send_error(msg["id"], "invalid_entity", err)
+        _send_validation_error(connection, msg["id"], "invalid_entity", err)
         return
     # Reject duplicate entity_ids in devices[]
     err = _validate_no_duplicate_devices(config)
     if err:
-        connection.send_error(msg["id"], "duplicate_entity", err)
+        _send_validation_error(connection, msg["id"], "duplicate_entity", err)
         return
     schedule_id = config.get("roommind_schedule_id")
     if schedule_id and schedule_id not in store.get_schedules():
-        connection.send_error(msg["id"], "invalid_schedule", "This reusable schedule no longer exists.")
+        _send_error(
+            connection, msg["id"], "invalid_schedule", "schedule_missing", "This reusable schedule no longer exists."
+        )
         return
 
     if ("thermostats" in config or "acs" in config) and "devices" not in config:
@@ -682,7 +743,7 @@ async def websocket_save_room(
         reference_changed = old_room and room.get("temperature_sensor", "") != old_room.get("temperature_sensor", "")
         if reference_changed:
             coordinator.reset_thermal_room(area_id)
-            await store.async_save_thermal_data(coordinator._model_manager.to_dict())
+            await store.async_save_thermal_data(coordinator.model_manager.to_dict())
         await coordinator.async_room_added(room)
 
     connection.send_result(msg["id"], {"room": room})
@@ -740,7 +801,7 @@ async def websocket_delete_room(
     msg: dict,
 ) -> None:
     """Delete a room."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     area_id = msg["area_id"]
 
     old_room = dict(store.get_room(area_id) or {})
@@ -748,7 +809,7 @@ async def websocket_delete_room(
     try:
         await store.async_delete_room(area_id)
     except KeyError:
-        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        _send_error(connection, msg["id"], "not_found", "room_not_found", "Room '{area_id}' not found", area_id=area_id)
         return
 
     await _async_release_dropped_valves(hass, area_id, old_valves, {})
@@ -790,7 +851,7 @@ async def _async_forget_in_room_lists(store: RoomMindStore, area_id: str) -> Non
 
 async def async_remove_room(hass: HomeAssistant, area_id: str) -> bool:
     """Remove a room and its learned state, returning false when absent."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     room = store.get_room(area_id)
     if room is None:
         return False
@@ -814,20 +875,21 @@ async def async_remove_room(hass: HomeAssistant, area_id: str) -> bool:
 async def async_pause_room(hass: HomeAssistant, area_id: str) -> None:
     """Stop a room whose area was deleted while preserving its configuration."""
     coordinator = _get_coordinator(hass)
-    if hass.data[DOMAIN]["store"].get_room(area_id) is not None and coordinator:
+    if get_store(hass).get_room(area_id) is not None and coordinator:
         await coordinator.async_room_paused(area_id)
 
 
 async def async_resume_room(hass: HomeAssistant, area_id: str) -> None:
     """Resume a resting room when its area returns."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     room = store.get_room(area_id)
     if room is None:
         return
     await store.async_update_room(area_id, {REST_SWITCHED_OFF: False})
     coordinator = _get_coordinator(hass)
-    if coordinator:
-        await coordinator.async_room_added(store.get_room(area_id))
+    resumed = store.get_room(area_id)
+    if coordinator and resumed is not None:
+        await coordinator.async_room_added(resumed)
 
 
 # ---------------------------------------------------------------------------
@@ -855,21 +917,23 @@ async def websocket_override_set(
     msg: dict,
 ) -> None:
     """Set a temporary override for a room."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     area_id = msg["area_id"]
     override_type = msg["override_type"]
     duration_hours = msg.get("duration")
 
     room = store.get_room(area_id)
     if room is None:
-        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        _send_error(connection, msg["id"], "not_found", "room_not_found", "Room '{area_id}' not found", area_id=area_id)
         return
 
     if override_type == OVERRIDE_CUSTOM:
         heat = msg.get("heat")
         cool = msg.get("cool")
         if heat is None and cool is None:
-            connection.send_error(msg["id"], "invalid", "Custom override requires heat and/or cool")
+            _send_error(
+                connection, msg["id"], "invalid", "override_needs_target", "Custom override requires heat and/or cool"
+            )
             return
     else:
         heat, cool = override_preset_band(room, override_type)
@@ -877,7 +941,9 @@ async def websocket_override_set(
     heat, cool = mask_override_band(heat, cool, room.get("climate_mode", "auto"))
 
     if heat is not None and cool is not None and cool < heat:
-        connection.send_error(msg["id"], "invalid", "Cooling target must be >= heating target")
+        _send_error(
+            connection, msg["id"], "invalid", "override_cool_below_heat", "Cooling target must be >= heating target"
+        )
         return
 
     override_until = (time.time() + duration_hours * 3600) if duration_hours else None
@@ -926,12 +992,12 @@ async def websocket_override_clear(
     msg: dict,
 ) -> None:
     """Clear an active override for a room."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     area_id = msg["area_id"]
 
     room = store.get_room(area_id)
     if room is None:
-        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        _send_error(connection, msg["id"], "not_found", "room_not_found", "Room '{area_id}' not found", area_id=area_id)
         return
 
     await store.async_update_room(
@@ -965,7 +1031,7 @@ async def websocket_get_settings(
     msg: dict,
 ) -> None:
     """Return global settings."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     connection.send_result(msg["id"], {"settings": store.get_settings()})
 
 
@@ -1078,7 +1144,7 @@ async def websocket_save_settings(
     msg: dict,
 ) -> None:
     """Save global settings (partial merge)."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     changes: dict = {}
     for key in _SETTINGS_SAVE_FIELDS:
         if key in msg:
@@ -1086,7 +1152,7 @@ async def websocket_save_settings(
 
     effective = {**store.get_settings(), **changes}
     if effective.get("ac_off_peak_start", "00:00") == effective.get("ac_off_peak_end", "05:00"):
-        connection.send_error(msg["id"], "invalid_tariff", "Off-peak start and end must differ.")
+        _send_error(connection, msg["id"], "invalid_tariff", "tariff_same_times", "Off-peak start and end must differ.")
         return
     for area_id in changes.get("ac_morning_boost_rooms", []):
         room = store.get_room(area_id)
@@ -1097,9 +1163,11 @@ async def websocket_save_settings(
             or room.get("climate_mode") == "cool_only"
             or not any(d.get("type") == "ac" for d in room.get("devices", []))
         ):
-            connection.send_error(
+            _send_error(
+                connection,
                 msg["id"],
                 "invalid_tariff",
+                "morning_boost_room",
                 "Morning boost needs a configured indoor AC room with an external temperature sensor.",
             )
             return
@@ -1109,27 +1177,30 @@ async def websocket_save_settings(
     if groups:
         group_ids = [g.get("id", "") for g in groups]
         if len(group_ids) != len(set(group_ids)):
-            connection.send_error(
-                msg["id"],
-                "duplicate_group_id",
-                "Compressor group IDs must be unique",
+            _send_error(
+                connection, msg["id"], "duplicate_group_id", "group_id_duplicate", "Compressor group IDs must be unique"
             )
             return
         all_members: list[str] = []
         for g in groups:
             for eid in g.get("members", []):
                 if not eid.startswith("climate."):
-                    connection.send_error(
+                    _send_error(
+                        connection,
                         msg["id"],
                         "invalid_member",
-                        f"Compressor group member '{eid}' is not a climate entity",
+                        "group_member_not_climate",
+                        "Compressor group member '{entity_id}' is not a climate entity",
+                        entity_id=eid,
                     )
                     return
             all_members.extend(g.get("members", []))
         if len(all_members) != len(set(all_members)):
-            connection.send_error(
+            _send_error(
+                connection,
                 msg["id"],
                 "duplicate_member",
+                "group_member_duplicate",
                 "A climate entity cannot be in multiple compressor groups",
             )
             return
@@ -1138,13 +1209,21 @@ async def websocket_save_settings(
             if group.get("shared_ac_control") and (
                 group.get("master_entity") or group.get("action_script") or group.get("enforce_uniform_mode")
             ):
-                connection.send_error(
-                    msg["id"], "shared_ac_conflict", "Shared AC control replaces master/uniform-mode control"
+                _send_error(
+                    connection,
+                    msg["id"],
+                    "shared_ac_conflict",
+                    "shared_ac_conflict",
+                    "Shared AC control replaces master/uniform-mode control",
                 )
                 return
             if not set(group.get("night_cooling_members", [])) <= set(group["members"]):
-                connection.send_error(
-                    msg["id"], "invalid_night_member", "Night priority units must belong to their group"
+                _send_error(
+                    connection,
+                    msg["id"],
+                    "invalid_night_member",
+                    "night_member_outside_group",
+                    "Night priority units must belong to their group",
                 )
                 return
 
@@ -1154,39 +1233,53 @@ async def websocket_save_settings(
             master = g.get("master_entity", "")
             if master:
                 if not master.startswith("climate."):
-                    connection.send_error(
+                    _send_error(
+                        connection,
                         msg["id"],
                         "invalid_master_entity",
-                        f"Master entity '{master}' must be a climate entity",
+                        "master_not_climate",
+                        "Master entity '{entity_id}' must be a climate entity",
+                        entity_id=master,
                     )
                     return
                 if master in g.get("members", []):
-                    connection.send_error(
+                    _send_error(
+                        connection,
                         msg["id"],
                         "master_in_members",
-                        f"Master entity '{master}' cannot also be a group member",
+                        "master_in_members",
+                        "Master entity '{entity_id}' cannot also be a group member",
+                        entity_id=master,
                     )
                     return
                 if master in all_members:
-                    connection.send_error(
+                    _send_error(
+                        connection,
                         msg["id"],
                         "master_is_other_member",
-                        f"Master entity '{master}' is a member of another group",
+                        "master_in_other_group",
+                        "Master entity '{entity_id}' is a member of another group",
+                        entity_id=master,
                     )
                     return
                 all_masters.append(master)
             script = g.get("action_script", "")
             if script and not script.startswith("script."):
-                connection.send_error(
+                _send_error(
+                    connection,
                     msg["id"],
                     "invalid_action_script",
-                    f"Action script '{script}' must be a script entity",
+                    "action_script_invalid",
+                    "Action script '{entity_id}' must be a script entity",
+                    entity_id=script,
                 )
                 return
         if len(all_masters) != len(set(all_masters)):
-            connection.send_error(
+            _send_error(
+                connection,
                 msg["id"],
                 "duplicate_master",
+                "master_duplicate",
                 "A master entity cannot be assigned to multiple groups",
             )
             return
@@ -1224,9 +1317,11 @@ async def websocket_get_analytics(
     msg: dict,
 ) -> None:
     """Return analytics data for a room."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     if store.get_room(msg["area_id"]) is None:
-        connection.send_error(msg["id"], "not_found", f"Room '{msg['area_id']}' not found")
+        _send_error(
+            connection, msg["id"], "not_found", "room_not_found", "Room '{area_id}' not found", area_id=msg["area_id"]
+        )
         return
     coordinator = _get_coordinator(hass)
     result = await build_analytics_data(
@@ -1260,10 +1355,10 @@ async def websocket_thermal_reset(
     msg: dict,
 ) -> None:
     """Reset thermal model and history for a single room."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     area_id = msg["area_id"]
     if store.get_room(area_id) is None:
-        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        _send_error(connection, msg["id"], "not_found", "room_not_found", "Room '{area_id}' not found", area_id=area_id)
         return
     coordinator = _get_coordinator(hass)
 
@@ -1296,7 +1391,7 @@ async def websocket_thermal_reset_all(
     msg: dict,
 ) -> None:
     """Reset thermal model and history for all rooms."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     coordinator = _get_coordinator(hass)
 
     # Clear all learned models — replace entire manager for clean state
@@ -1330,17 +1425,17 @@ async def websocket_boost_learning(
     msg: dict,
 ) -> None:
     """Boost EKF covariance for a room to accelerate re-learning."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     coordinator = _get_coordinator(hass)
     area_id = msg["area_id"]
 
     if not coordinator:
-        connection.send_error(msg["id"], "no_coordinator", "Coordinator not ready")
+        _send_error(connection, msg["id"], "no_coordinator", "coordinator_not_ready", "Coordinator not ready")
         return
 
     n_obs = coordinator.boost_learning(area_id)
     if n_obs is None:
-        connection.send_error(msg["id"], "no_model", "Room has no learned model yet")
+        _send_error(connection, msg["id"], "no_model", "no_model", "Room has no learned model yet")
         return
 
     # The frontend counts the fade from this anchor
@@ -1370,7 +1465,7 @@ async def websocket_get_diagnostics(
 
     entries = hass.config_entries.async_entries(DOMAIN)
     if not entries:
-        connection.send_error(msg["id"], "not_found", "No config entry found")
+        _send_error(connection, msg["id"], "not_found", "no_config_entry", "No config entry found")
         return
     result = await async_get_config_entry_diagnostics(hass, entries[0])
     connection.send_result(msg["id"], result)
@@ -1394,10 +1489,10 @@ async def websocket_covers_clear_override(
     msg: dict,
 ) -> None:
     """Clear a user cover override so automatic cover control resumes."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     area_id = msg["area_id"]
     if store.get_room(area_id) is None:
-        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        _send_error(connection, msg["id"], "not_found", "room_not_found", "Room '{area_id}' not found", area_id=area_id)
         return
 
     coordinator = _get_coordinator(hass)
@@ -1418,7 +1513,7 @@ async def websocket_covers_clear_override(
 @websocket_api.async_response
 async def websocket_list_schedules(hass: HomeAssistant, connection: ActiveConnection, msg: dict) -> None:
     """List reusable schedules and their linked room assignments."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     schedules = store.get_schedules()
     rooms = store.get_rooms()
     for schedule_id, schedule in schedules.items():
@@ -1428,6 +1523,7 @@ async def websocket_list_schedules(hass: HomeAssistant, connection: ActiveConnec
     connection.send_result(msg["id"], {"schedules": schedules})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "roommind/schedules/save",
@@ -1441,15 +1537,15 @@ async def websocket_list_schedules(hass: HomeAssistant, connection: ActiveConnec
 @websocket_api.async_response
 async def websocket_save_schedule(hass: HomeAssistant, connection: ActiveConnection, msg: dict) -> None:
     """Validate and atomically save a reusable schedule and assignments."""
-    store = hass.data[DOMAIN]["store"]
+    store = get_store(hass)
     try:
         schedule = validate_schedule(msg["name"], msg["days"])
         schedule_id = msg.get("schedule_id") or uuid.uuid4().hex
         if msg.get("schedule_id") and schedule_id not in store.get_schedules():
-            raise ValueError("This schedule no longer exists. Reload the schedule list.")
+            raise RoomMindValidationError("schedule_gone", "This schedule no longer exists. Reload the schedule list.")
         saved = await store.async_save_schedule(schedule_id, schedule, msg["area_ids"], msg["revision"])
     except ValueError as err:
-        connection.send_error(msg["id"], "invalid_schedule", str(err))
+        _send_validation_error(connection, msg["id"], "invalid_schedule", err)
         return
     coordinator = _get_coordinator(hass)
     if coordinator:
@@ -1457,6 +1553,7 @@ async def websocket_save_schedule(hass: HomeAssistant, connection: ActiveConnect
     connection.send_result(msg["id"], {"schedule": saved})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "roommind/schedules/delete",
@@ -1468,13 +1565,14 @@ async def websocket_save_schedule(hass: HomeAssistant, connection: ActiveConnect
 async def websocket_delete_schedule(hass: HomeAssistant, connection: ActiveConnection, msg: dict) -> None:
     """Delete a schedule only once all rooms have been unassigned."""
     try:
-        await hass.data[DOMAIN]["store"].async_delete_schedule(msg["schedule_id"], msg["revision"])
+        await get_store(hass).async_delete_schedule(msg["schedule_id"], msg["revision"])
     except ValueError as err:
-        connection.send_error(msg["id"], "invalid_schedule", str(err))
+        _send_validation_error(connection, msg["id"], "invalid_schedule", err)
         return
     connection.send_result(msg["id"], {"success": True})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "roommind/schedules/import",
@@ -1492,7 +1590,13 @@ async def websocket_import_schedule(hass: HomeAssistant, connection: ActiveConne
     blocks = await read_schedule_blocks(hass, msg["entity_id"])
     state = hass.states.get(msg["entity_id"])
     if blocks is None:
-        connection.send_error(msg["id"], "invalid_schedule", "Cannot read that Home Assistant schedule helper.")
+        _send_error(
+            connection,
+            msg["id"],
+            "invalid_schedule",
+            "helper_unreadable",
+            "Cannot read that Home Assistant schedule helper.",
+        )
         return
     name = state.attributes.get("friendly_name", msg["entity_id"]) if state else msg["entity_id"]
     try:
@@ -1500,7 +1604,7 @@ async def websocket_import_schedule(hass: HomeAssistant, connection: ActiveConne
             name, blocks, msg["fallback_heat"], msg["fallback_cool"], partial(ha_temp_to_celsius, hass)
         )
     except (ValueError, KeyError, TypeError, AttributeError) as err:
-        connection.send_error(msg["id"], "invalid_schedule", str(err))
+        _send_validation_error(connection, msg["id"], "invalid_schedule", err)
         return
     connection.send_result(msg["id"], {"schedule": {**draft, "id": "", "revision": 0, "area_ids": []}})
 

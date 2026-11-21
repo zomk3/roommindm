@@ -7,7 +7,7 @@
       }
     },
     "abort": {
-      "already_configured": "RoomMind is already configured."
+      "single_instance_allowed": "RoomMind is already configured."
     }
   },
   "issues": {
@@ -44,6 +44,146 @@
       "air_quality": {
         "name": "{room} air quality poor"
       }
+    }
+  },
+  "exceptions": {
+    "action_script_invalid": {
+      "message": "Action script {entity_id} must be a script entity."
+    },
+    "admin_only": {
+      "message": "Only administrators can change this."
+    },
+    "coordinator_not_ready": {
+      "message": "RoomMind is still starting. Try again in a moment."
+    },
+    "dehumidifier_incomplete": {
+      "message": "Select a dehumidifier and a humidity sensor first."
+    },
+    "dehumidifier_taken": {
+      "message": "This dehumidifier is already assigned to another room."
+    },
+    "duplicate_devices": {
+      "message": "A device is listed twice in this room."
+    },
+    "group_id_duplicate": {
+      "message": "Compressor group IDs must be unique."
+    },
+    "group_member_duplicate": {
+      "message": "A climate entity cannot be in more than one compressor group."
+    },
+    "group_member_not_climate": {
+      "message": "Compressor group member {entity_id} is not a climate entity."
+    },
+    "helper_blocks_invalid": {
+      "message": "{day}: this helper has invalid blocks."
+    },
+    "helper_blocks_overlap": {
+      "message": "{day}: helper blocks overlap or cross midnight."
+    },
+    "helper_temperature_invalid": {
+      "message": "{day}: the helper contains an invalid temperature."
+    },
+    "helper_unreadable": {
+      "message": "Cannot read that Home Assistant schedule helper."
+    },
+    "humidity_bounds": {
+      "message": "The lower humidity bound must be below the upper bound."
+    },
+    "hvac_mode_not_supported": {
+      "message": "{entity_id} does not support HVAC mode {hvac_mode}."
+    },
+    "master_duplicate": {
+      "message": "A master entity cannot be assigned to more than one group."
+    },
+    "master_in_members": {
+      "message": "Master entity {entity_id} cannot also be a group member."
+    },
+    "master_in_other_group": {
+      "message": "Master entity {entity_id} is a member of another group."
+    },
+    "master_not_climate": {
+      "message": "Master entity {entity_id} must be a climate entity."
+    },
+    "morning_boost_room": {
+      "message": "Morning boost needs a configured indoor AC room with an external temperature sensor."
+    },
+    "night_member_outside_group": {
+      "message": "Night priority units must belong to their group."
+    },
+    "no_config_entry": {
+      "message": "RoomMind is not set up."
+    },
+    "no_model": {
+      "message": "This room has no learned model yet."
+    },
+    "override_cool_below_heat": {
+      "message": "The cooling target must be at least the heating target."
+    },
+    "override_needs_target": {
+      "message": "A custom override needs a heating and/or cooling target."
+    },
+    "own_entity": {
+      "message": "RoomMind's own entity {entity_id} cannot be assigned to a room."
+    },
+    "room_not_found": {
+      "message": "Room {area_id} not found."
+    },
+    "schedule_block_count": {
+      "message": "{day}: use between 1 and 48 blocks."
+    },
+    "schedule_block_gap": {
+      "message": "{day}: blocks must cover midnight to midnight without gaps or overlaps."
+    },
+    "schedule_block_invalid": {
+      "message": "{day}: invalid block."
+    },
+    "schedule_block_targets": {
+      "message": "{day}: each block needs heat and cool targets."
+    },
+    "schedule_changed": {
+      "message": "This schedule changed in another window. Reload it before saving."
+    },
+    "schedule_changed_delete": {
+      "message": "This schedule changed in another window. Reload it before deleting."
+    },
+    "schedule_cool_below_heat": {
+      "message": "{day}: the cool target must be at least the heat target."
+    },
+    "schedule_gone": {
+      "message": "This schedule no longer exists. Reload the schedule list."
+    },
+    "schedule_in_use": {
+      "message": "Unassign all rooms and save before deleting this schedule."
+    },
+    "schedule_last_block": {
+      "message": "{day}: the last block must end at 24:00."
+    },
+    "schedule_missing": {
+      "message": "This reusable schedule no longer exists."
+    },
+    "schedule_name": {
+      "message": "Give the schedule a name of up to 80 characters."
+    },
+    "schedule_rooms": {
+      "message": "Choose configured indoor rooms only."
+    },
+    "schedule_temperature_range": {
+      "message": "{day}: temperatures must be between 5 and 35 °C."
+    },
+    "schedule_time_format": {
+      "message": "Use times from 00:00 to 24:00, in whole minutes."
+    },
+    "schedule_week": {
+      "message": "A schedule must contain all seven days."
+    },
+    "shared_ac_conflict": {
+      "message": "Shared AC control replaces master and uniform-mode control."
+    },
+    "tariff_same_times": {
+      "message": "Off-peak start and end must differ."
+    },
+    "update_failed": {
+      "message": "Every room failed in this control cycle ({rooms}). See the Home Assistant log for details."
     }
   }
 }

@@ -63,8 +63,8 @@ def _wire_states(hass, ac_holder: dict, *, temp: str):
 
 def _age_mode(coordinator):
     """Pretend the current mode started long ago so the room-level min-run window is over."""
-    if AREA in coordinator._mode_on_since:
-        coordinator._mode_on_since[AREA] -= 3600
+    if AREA in coordinator.mode_on_since:
+        coordinator.mode_on_since[AREA] -= 3600
 
 
 def _calls(hass, service: str):
@@ -344,7 +344,7 @@ class TestHoldSurvivesStateLag:
 
         _wire_states(hass, ac, temp="18.0")
         await coordinator._async_update_data()
-        assert coordinator._compressor_manager.is_compressor_running("group1")
+        assert coordinator.compressor_manager.is_compressor_running("group1")
 
         # Room reaches target, but the integration has not polled the new state yet
         hass.services.async_call.reset_mock()
@@ -353,7 +353,7 @@ class TestHoldSurvivesStateLag:
         await coordinator._async_update_data()
         await coordinator._async_update_data()
 
-        assert coordinator._compressor_manager.is_compressor_running("group1")
+        assert coordinator.compressor_manager.is_compressor_running("group1")
         assert [c for c in _calls(hass, "set_hvac_mode") if c[0][2]["hvac_mode"] == "off"] == []
 
     @pytest.mark.asyncio
@@ -368,11 +368,11 @@ class TestHoldSurvivesStateLag:
         _wire_states(hass, ac, temp="22.5")
         _age_mode(coordinator)
         with patch("custom_components.roommind.managers.compressor_group_manager.monotonic") as mono:
-            mono.return_value = coordinator._compressor_manager.get_state("group1").compressor_on_since + 300
+            mono.return_value = coordinator.compressor_manager.get_state("group1").compressor_on_since + 300
             await coordinator._async_update_data()
 
         # min-run (15 min) is still open, but the device has been off for longer than the grace window
-        assert not coordinator._compressor_manager.is_compressor_running("group1")
+        assert not coordinator.compressor_manager.is_compressor_running("group1")
 
 
 class TestOrchestratedParkedAc:
@@ -405,7 +405,7 @@ class TestOrchestratedParkedAc:
             data = await coordinator._async_update_data()
 
         assert data["rooms"][AREA]["commanded_mode"] == MODE_HEATING
-        assert not coordinator._compressor_manager.is_compressor_running("group1")
+        assert not coordinator.compressor_manager.is_compressor_running("group1")
 
     @pytest.mark.asyncio
     async def test_ac_parked_by_plan_keeps_running_during_min_run(self, hass, mock_config_entry):
@@ -449,7 +449,7 @@ class TestOrchestratedParkedAc:
             await coordinator._async_update_data()
 
         assert [c for c in _calls(hass, "set_hvac_mode") if c[0][2]["hvac_mode"] == "off"] == []
-        assert coordinator._compressor_manager.is_compressor_running("group1")
+        assert coordinator.compressor_manager.is_compressor_running("group1")
 
     @pytest.mark.asyncio
     async def test_parked_ac_reporting_off_is_not_commanded_during_min_run(self, hass, mock_config_entry):
@@ -519,8 +519,8 @@ class TestOrchestratedUnlistedAc:
         ac = {"state": _ac_state(ac_state, 20.0)}
         _wire_states(hass, ac, temp="18.0")
         # a real AC in the neighbouring room on the same outdoor unit, running
-        coordinator._compressor_manager.load_groups([SHARED_GROUP])
-        coordinator._compressor_manager.update_member(AC2, True)
+        coordinator.compressor_manager.load_groups([SHARED_GROUP])
+        coordinator.compressor_manager.update_member(AC2, True)
         plan = HeatSourcePlan(
             commands=[DeviceCommand("climate.living_room", "primary", "thermostat", True, 1.0, "t")],
             active_sources="primary",
@@ -537,8 +537,8 @@ class TestOrchestratedUnlistedAc:
         """It must not take the neighbour's min-run protection away (#436)."""
         coordinator = await self._tick_with_unlisted_ac(hass, mock_config_entry, ac_state)
 
-        assert coordinator._compressor_manager.get_state("group1").active_members == {AC2}
-        assert coordinator._compressor_manager.check_must_stay_active(AC2) is True
+        assert coordinator.compressor_manager.get_state("group1").active_members == {AC2}
+        assert coordinator.compressor_manager.check_must_stay_active(AC2) is True
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("ac_state", ["heat", "cool", "heat_cool", "auto", "dry"])
@@ -546,7 +546,7 @@ class TestOrchestratedUnlistedAc:
         """Its compressor runs, so the other rooms must still see it for min-off and min-run."""
         coordinator = await self._tick_with_unlisted_ac(hass, mock_config_entry, ac_state)
 
-        assert coordinator._compressor_manager.get_state("group1").active_members == {AC, AC2}
+        assert coordinator.compressor_manager.get_state("group1").active_members == {AC, AC2}
 
 
 class TestHoldShowsTheRunningUnit:
@@ -714,10 +714,10 @@ class TestHoldShowsTheRunningUnit:
     @pytest.mark.asyncio
     async def test_min_off_wait_has_time_left(self, hass, mock_config_entry):
         coordinator = await _setup(hass, mock_config_entry)
-        coordinator._compressor_manager.load_groups([GROUP])
-        coordinator._compressor_manager.update_member(AC, True)
-        coordinator._compressor_manager.update_member(AC, False)
-        coordinator._compressor_manager._states["group1"].compressor_off_since -= 60
+        coordinator.compressor_manager.load_groups([GROUP])
+        coordinator.compressor_manager.update_member(AC, True)
+        coordinator.compressor_manager.update_member(AC, False)
+        coordinator.compressor_manager._states["group1"].compressor_off_since -= 60
         ac = {"state": _ac_state("off", 16.0)}
         _wire_states(hass, ac, temp="18.0")
         before = time.time()

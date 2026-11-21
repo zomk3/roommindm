@@ -95,8 +95,8 @@ async def test_dropout_after_valid_reading_still_turns_off(hass, mock_config_ent
     await coordinator._async_update_data()
 
     area_id = "living_room_abc12345"
-    cached_temp, _ = coordinator._last_valid_temps[area_id]
-    coordinator._last_valid_temps[area_id] = (cached_temp, time.monotonic() - MAX_SENSOR_STALENESS - 1)
+    cached_temp, _ = coordinator.last_valid_temps[area_id]
+    coordinator.last_valid_temps[area_id] = (cached_temp, time.monotonic() - MAX_SENSOR_STALENESS - 1)
 
     hass.services.async_call.reset_mock()
     hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=None))
@@ -244,10 +244,10 @@ def test_any_member_room_waiting_counts_pending_window(hass, mock_config_entry):
     rooms = {"living": {**AC_ROOM, "area_id": "living", "temperature_sensor": ""}}
     assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is False
 
-    coordinator._window_manager.resolve_raw("living", {"binary_sensor.window": "unavailable"})
+    coordinator.window_manager.resolve_raw("living", {"binary_sensor.window": "unavailable"})
     assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is True
 
-    coordinator._window_manager.resolve_raw("living", {"binary_sensor.window": "off"})
+    coordinator.window_manager.resolve_raw("living", {"binary_sensor.window": "off"})
     assert coordinator._any_member_room_waiting(["climate.ac_living"], rooms) is False
 
 

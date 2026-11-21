@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import time
 from datetime import time as dt_time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 
+if TYPE_CHECKING:
+    from .coordinator import RoomMindCoordinator
+
 from .const import DEFAULT_CONTROL_MODE, DOMAIN, HEATING_SYSTEM_RADIATOR, VERSION
 from .control.mpc_controller import _active_targets, _last_commands, _now, _sent_at
 from .control.residual_heat import residual_tau
+from .store import find_store
 from .utils.history_store import DETAIL_FIELDS
 
 # v2 adds what a simulation needs to rebuild a setup (device capabilities, referenced
@@ -157,7 +161,7 @@ def _build_entity_states(hass: HomeAssistant, config: dict) -> dict[str, dict[st
 
 def _build_window_state(coordinator: Any, area_id: str) -> dict[str, Any]:
     """Build window manager state for a room."""
-    wm = coordinator._window_manager
+    wm = coordinator.window_manager
     now = time.time()
     result: dict[str, Any] = {
         "paused": wm._paused.get(area_id, False),
@@ -173,7 +177,7 @@ def _build_window_state(coordinator: Any, area_id: str) -> dict[str, Any]:
 
 def _build_cover_state(coordinator: Any, area_id: str) -> dict[str, Any] | None:
     """Build cover manager state for a room."""
-    cm = coordinator._cover_manager
+    cm = coordinator.cover_manager
     if area_id not in cm._states:
         return None
     cs = cm._states[area_id]
@@ -197,7 +201,7 @@ def _build_cover_state(coordinator: Any, area_id: str) -> dict[str, Any] | None:
 
 def _build_compressor_state(coordinator: Any) -> dict[str, Any]:
     """Build compressor group manager state."""
-    cgm = coordinator._compressor_manager
+    cgm = coordinator.compressor_manager
     # CompressorGroupManager stores time.monotonic() stamps, not wall-clock time
     now = time.monotonic()
     groups: dict[str, Any] = {}
@@ -227,7 +231,7 @@ def _build_compressor_state(coordinator: Any) -> dict[str, Any]:
 
 def _build_valve_state(coordinator: Any) -> dict[str, Any]:
     """Build valve manager state."""
-    vm = coordinator._valve_manager
+    vm = coordinator.valve_manager
     now = time.time()
     result: dict[str, Any] = {
         "currently_cycling": {eid: round(now - ts) for eid, ts in vm._cycling.items()},
@@ -239,9 +243,9 @@ def _build_valve_state(coordinator: Any) -> dict[str, Any]:
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: ConfigEntry) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    data = hass.data.get(DOMAIN, {})
-    store = data.get("store")
-    coordinator = data.get("coordinator")
+    store = find_store(hass)
+    # Unset while the entry is not loaded (diagnostics may be downloaded for a failed setup)
+    coordinator: RoomMindCoordinator | None = getattr(config_entry, "runtime_data", None)
 
     if not store:
         return {"error": "Integration not loaded"}
@@ -285,11 +289,11 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
 
         # Coordinator internal state for this room
         if coordinator:
-            live_diag["previous_mode"] = coordinator._previous_modes.get(area_id, "idle")
-            on_since = coordinator._mode_on_since.get(area_id)
+            live_diag["previous_mode"] = coordinator.previous_modes.get(area_id, "idle")
+            on_since = coordinator.mode_on_since.get(area_id)
             if on_since is not None:
                 live_diag["mode_active_for_s"] = round(time.time() - on_since)
-            cached = coordinator._last_valid_temps.get(area_id)
+            cached = coordinator.last_valid_temps.get(area_id)
             if cached is not None:
                 live_diag["cached_temp"] = cached[0]
                 live_diag["cached_temp_age_s"] = round(time.monotonic() - cached[1])
@@ -298,13 +302,13 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
         if coordinator:
             # Radiators use the learned size and decay time of their afterglow (as the controller)
             radiator = config.get("heating_system_type", "") == HEATING_SYSTEM_RADIATOR
-            scale = coordinator._model_manager.get_residual_scale(area_id) if radiator else 1.0
-            tau = coordinator._model_manager.get_residual_tau(area_id) if radiator else None
+            scale = coordinator.model_manager.get_residual_scale(area_id) if radiator else 1.0
+            tau = coordinator.model_manager.get_residual_tau(area_id) if radiator else None
             live_diag["q_residual"] = round(
-                coordinator._residual_tracker.get_q_residual(
+                coordinator.residual_tracker.get_q_residual(
                     area_id,
                     config.get("heating_system_type", ""),
-                    coordinator._previous_modes.get(area_id, "idle"),
+                    coordinator.previous_modes.get(area_id, "idle"),
                     scale,
                     tau,
                 ),
@@ -313,7 +317,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
             if radiator:
                 live_diag["residual_scale"] = round(scale, 3)
                 live_diag["residual_decay_minutes"] = round(residual_tau("radiator", tau), 1)
-            live_diag["q_rebound"] = round(coordinator._rebound_tracker.get_charge(area_id), 4)
+            live_diag["q_rebound"] = round(coordinator.rebound_tracker.get_charge(area_id), 4)
 
         # Schedule entity state
         schedules = config.get("schedules", [])
@@ -340,7 +344,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
 
         # Model info from EKF estimator
         if coordinator:
-            mgr = coordinator._model_manager
+            mgr = coordinator.model_manager
             if area_id in mgr._estimators:
                 room_diag["model"] = _build_model_info(mgr._estimators[area_id])
                 room_diag["model_state"] = mgr._estimators[area_id].to_dict()
@@ -367,8 +371,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
                 room_diag["cover"] = cover
 
         # Heat source orchestration state
-        if coordinator and area_id in coordinator._heat_source_states:
-            room_diag["heat_source_routing"] = coordinator._heat_source_states[area_id]
+        if coordinator and area_id in coordinator.heat_source_states:
+            room_diag["heat_source_routing"] = coordinator.heat_source_states[area_id]
 
         rooms_diag[area_id] = room_diag
 
@@ -378,16 +382,16 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
         "humidity": coordinator.outdoor_humidity if coordinator else None,
     }
     if coordinator:
-        forecast = coordinator._weather_manager._outdoor_forecast
+        forecast = coordinator.weather_manager._outdoor_forecast
         outdoor["forecast_available"] = bool(forecast)
         outdoor["forecast_points"] = len(forecast) if forecast else 0
 
     # Recent history (last 2 hours of detail data per room)
     recent_history: dict[str, list] = {}
-    if coordinator and coordinator._history_store:
+    if coordinator and coordinator.history_store:
         for area_id in rooms_config:
             try:
-                rows = await hass.async_add_executor_job(coordinator._history_store.read_detail, area_id, 7200)
+                rows = await hass.async_add_executor_job(coordinator.history_store.read_detail, area_id, 7200)
                 recent_history[area_id] = [
                     {
                         "ts": row.get("timestamp", ""),
@@ -403,10 +407,10 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
                 recent_history[area_id] = []
 
     history_48h: dict[str, list] = {}
-    if coordinator and coordinator._history_store:
+    if coordinator and coordinator.history_store:
         for area_id in rooms_config:
             try:
-                rows = await hass.async_add_executor_job(coordinator._history_store.read_detail, area_id, 48 * 3600)
+                rows = await hass.async_add_executor_job(coordinator.history_store.read_detail, area_id, 48 * 3600)
                 history_48h[area_id] = [
                     {field: row.get(field, "") for field in HISTORY_48H_FIELDS} for row in rows[-HISTORY_48H_MAX_ROWS:]
                 ]
@@ -443,9 +447,9 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
         "history_48h": history_48h,
         "compressor_groups": compressor,
         "valve_protection": valve,
-        "coil_dry_state": (coordinator._coil_dry_manager.get_state() if coordinator is not None else {}),
+        "coil_dry_state": (coordinator.coil_dry_manager.get_state() if coordinator is not None else {}),
         # Live AC sensor offsets {entity: {"heat"|"cool"|"idle": [offset K, readings]}}; settings hold the last save
-        "ac_head_offsets": (coordinator._head_offsets.get_state() if coordinator is not None else {}),
+        "ac_head_offsets": (coordinator.head_offsets.get_state() if coordinator is not None else {}),
         "presence": {
             "enabled": settings.get("presence_enabled", False),
             "persons": settings.get("presence_persons", []),

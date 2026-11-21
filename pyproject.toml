@@ -27,6 +27,8 @@ ignore = [
 known-first-party = ["custom_components.roommind"]
 
 [tool.pytest.ini_options]
+# dev/sim has its own suite and package (run it from dev/sim)
+testpaths = ["tests"]
 # Async tests without @pytest.mark.asyncio (reusable schedules, tariff, shared AC) run too
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

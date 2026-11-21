@@ -10,5 +10,6 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/snazzybean/roommind/issues",
   "requirements": [],
+  "single_config_entry": true,
   "version": "2.2.1b2"
 }

@@ -21,7 +21,7 @@ def _estimator() -> SimpleNamespace:
 
 
 def test_snapshot_lists_state_covariance_and_error_sums():
-    coordinator = SimpleNamespace(_model_manager=SimpleNamespace(_estimators={"kueche": _estimator()}))
+    coordinator = SimpleNamespace(model_manager=SimpleNamespace(_estimators={"kueche": _estimator()}))
     snap = model_snapshot(coordinator)["kueche"]
     assert snap["x"] == [20.12, 0.01235, 0.5123]
     assert snap["pd"] == [0.5, 0.5, 0.5]

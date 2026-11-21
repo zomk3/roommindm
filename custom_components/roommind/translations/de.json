@@ -7,7 +7,7 @@
       }
     },
     "abort": {
-      "already_configured": "RoomMind ist bereits konfiguriert."
+      "single_instance_allowed": "RoomMind ist bereits konfiguriert."
     }
   },
   "issues": {
@@ -44,6 +44,146 @@
       "air_quality": {
         "name": "{room} Luftqualität schlecht"
       }
+    }
+  },
+  "exceptions": {
+    "action_script_invalid": {
+      "message": "Aktionsskript {entity_id} muss eine Skript-Entität sein."
+    },
+    "admin_only": {
+      "message": "Nur Administratoren können das ändern."
+    },
+    "coordinator_not_ready": {
+      "message": "RoomMind startet noch. Versuche es gleich noch einmal."
+    },
+    "dehumidifier_incomplete": {
+      "message": "Wähle zuerst einen Entfeuchter und einen Feuchtesensor."
+    },
+    "dehumidifier_taken": {
+      "message": "Dieser Entfeuchter ist bereits einem anderen Raum zugeordnet."
+    },
+    "duplicate_devices": {
+      "message": "Ein Gerät ist in diesem Raum doppelt eingetragen."
+    },
+    "group_id_duplicate": {
+      "message": "Die IDs der Kompressorgruppen müssen eindeutig sein."
+    },
+    "group_member_duplicate": {
+      "message": "Eine Klima-Entität kann nicht in mehreren Kompressorgruppen sein."
+    },
+    "group_member_not_climate": {
+      "message": "Kompressorgruppen-Mitglied {entity_id} ist keine Klima-Entität."
+    },
+    "helper_blocks_invalid": {
+      "message": "{day}: dieser Helfer hat ungültige Blöcke."
+    },
+    "helper_blocks_overlap": {
+      "message": "{day}: Blöcke des Helfers überschneiden sich oder gehen über Mitternacht."
+    },
+    "helper_temperature_invalid": {
+      "message": "{day}: der Helfer enthält eine ungültige Temperatur."
+    },
+    "helper_unreadable": {
+      "message": "Dieser Home-Assistant-Zeitplan-Helfer kann nicht gelesen werden."
+    },
+    "humidity_bounds": {
+      "message": "Die untere Feuchtegrenze muss unter der oberen liegen."
+    },
+    "hvac_mode_not_supported": {
+      "message": "{entity_id} unterstützt den HVAC-Modus {hvac_mode} nicht."
+    },
+    "master_duplicate": {
+      "message": "Eine Master-Entität kann nicht mehreren Gruppen zugeordnet werden."
+    },
+    "master_in_members": {
+      "message": "Master-Entität {entity_id} kann nicht zugleich Gruppenmitglied sein."
+    },
+    "master_in_other_group": {
+      "message": "Master-Entität {entity_id} ist Mitglied einer anderen Gruppe."
+    },
+    "master_not_climate": {
+      "message": "Master-Entität {entity_id} muss eine Klima-Entität sein."
+    },
+    "morning_boost_room": {
+      "message": "Der Morgen-Boost braucht einen eingerichteten Innenraum mit Klimagerät und externem Temperatursensor."
+    },
+    "night_member_outside_group": {
+      "message": "Geräte mit Nachtpriorität müssen zu ihrer Gruppe gehören."
+    },
+    "no_config_entry": {
+      "message": "RoomMind ist nicht eingerichtet."
+    },
+    "no_model": {
+      "message": "Dieser Raum hat noch kein gelerntes Modell."
+    },
+    "override_cool_below_heat": {
+      "message": "Das Kühlziel muss mindestens so hoch wie das Heizziel sein."
+    },
+    "override_needs_target": {
+      "message": "Eine eigene Übersteuerung braucht ein Heiz- und/oder Kühlziel."
+    },
+    "own_entity": {
+      "message": "Die RoomMind-eigene Entität {entity_id} kann keinem Raum zugeordnet werden."
+    },
+    "room_not_found": {
+      "message": "Raum {area_id} nicht gefunden."
+    },
+    "schedule_block_count": {
+      "message": "{day}: verwende 1 bis 48 Blöcke."
+    },
+    "schedule_block_gap": {
+      "message": "{day}: die Blöcke müssen Mitternacht bis Mitternacht ohne Lücken oder Überschneidungen abdecken."
+    },
+    "schedule_block_invalid": {
+      "message": "{day}: ungültiger Block."
+    },
+    "schedule_block_targets": {
+      "message": "{day}: jeder Block braucht ein Heiz- und ein Kühlziel."
+    },
+    "schedule_changed": {
+      "message": "Dieser Zeitplan wurde in einem anderen Fenster geändert. Lade ihn vor dem Speichern neu."
+    },
+    "schedule_changed_delete": {
+      "message": "Dieser Zeitplan wurde in einem anderen Fenster geändert. Lade ihn vor dem Löschen neu."
+    },
+    "schedule_cool_below_heat": {
+      "message": "{day}: das Kühlziel muss mindestens so hoch wie das Heizziel sein."
+    },
+    "schedule_gone": {
+      "message": "Dieser Zeitplan existiert nicht mehr. Lade die Zeitplanliste neu."
+    },
+    "schedule_in_use": {
+      "message": "Entferne alle Räume und speichere, bevor du diesen Zeitplan löschst."
+    },
+    "schedule_last_block": {
+      "message": "{day}: der letzte Block muss um 24:00 enden."
+    },
+    "schedule_missing": {
+      "message": "Dieser wiederverwendbare Zeitplan existiert nicht mehr."
+    },
+    "schedule_name": {
+      "message": "Gib dem Zeitplan einen Namen mit höchstens 80 Zeichen."
+    },
+    "schedule_rooms": {
+      "message": "Wähle nur eingerichtete Innenräume."
+    },
+    "schedule_temperature_range": {
+      "message": "{day}: die Temperaturen müssen zwischen 5 und 35 °C liegen."
+    },
+    "schedule_time_format": {
+      "message": "Verwende Zeiten von 00:00 bis 24:00 in ganzen Minuten."
+    },
+    "schedule_week": {
+      "message": "Ein Zeitplan muss alle sieben Tage enthalten."
+    },
+    "shared_ac_conflict": {
+      "message": "Die gemeinsame Klimasteuerung ersetzt Master- und Einheitsmodus-Steuerung."
+    },
+    "tariff_same_times": {
+      "message": "Beginn und Ende der Niedertarifzeit müssen sich unterscheiden."
+    },
+    "update_failed": {
+      "message": "In diesem Regelzyklus sind alle Räume fehlgeschlagen ({rooms}). Details stehen im Home-Assistant-Protokoll."
     }
   }
 }

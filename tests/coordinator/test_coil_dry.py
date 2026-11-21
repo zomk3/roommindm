@@ -110,7 +110,7 @@ def _age_compressor_min_run(coordinator, group_id):
     CompressorGroupManager reads ``time.monotonic()``, which the frozen wall
     clock does not move, so the run time has to be aged explicitly.
     """
-    state = coordinator._compressor_manager.get_state(group_id)
+    state = coordinator.compressor_manager.get_state(group_id)
     state.compressor_on_since -= COOLING_RUN_SECONDS
 
 
@@ -212,7 +212,7 @@ async def test_compressor_off_since_still_tracked_during_coil_dry(hass, mock_con
     rs = await _run_cycle(coordinator, IDLE_TEMP)
 
     assert rs["coil_dry_active"] is True
-    group_state = coordinator._compressor_manager.get_state("g1")
+    group_state = coordinator.compressor_manager.get_state("g1")
     assert group_state is not None
     assert group_state.active_members == set()
     assert group_state.compressor_off_since is not None
@@ -312,7 +312,7 @@ async def test_coil_dry_state_pruned_for_unconfigured_device(hass, mock_config_e
 
     await _run_cycle(coordinator, IDLE_TEMP)
 
-    assert coordinator._coil_dry_manager.state_for("climate.ghost_ac") is None
+    assert coordinator.coil_dry_manager.state_for("climate.ghost_ac") is None
 
 
 @pytest.mark.asyncio
@@ -377,7 +377,7 @@ async def test_dry_mode_tracked_as_compressor_active(hass, mock_config_entry, fr
     rs = await _run_cycle(coordinator, IDLE_TEMP)
 
     assert rs["coil_dry_active"] is True
-    group_state = coordinator._compressor_manager.get_state("g1")
+    group_state = coordinator.compressor_manager.get_state("g1")
     assert group_state.active_members == {AC_EID}
 
 
@@ -463,13 +463,13 @@ async def test_dry_run_blocked_by_compressor_min_off(hass, mock_config_entry, fr
     await _run_cycle(coordinator, COOLING_TEMP)
     frozen_time[0] += COOLING_RUN_SECONDS
     # Compressor just stopped: min-off is running, so nothing may start it again.
-    coordinator._compressor_manager.update_member(AC_EID, False)
+    coordinator.compressor_manager.update_member(AC_EID, False)
     rs = await _run_cycle(coordinator, IDLE_TEMP)
 
-    assert coordinator._compressor_manager.check_can_activate(AC_EID) is False
+    assert coordinator.compressor_manager.check_can_activate(AC_EID) is False
     assert rs["coil_dry_active"] is False
     # Blocked, not "nothing to dry" — the wetness is still on the books.
-    assert coordinator._coil_dry_manager.state_for(AC_EID).wet_seconds >= 60
+    assert coordinator.coil_dry_manager.state_for(AC_EID).wet_seconds >= 60
 
 
 @pytest.mark.asyncio
@@ -492,21 +492,21 @@ async def test_cycling_valve_entities_are_forwarded_to_the_manager(hass, mock_co
     }
     _setup(hass, {"living_room": room}, dict(COIL_DRY_SETTINGS))
     coordinator = _create_coordinator(hass, mock_config_entry)
-    coordinator._valve_manager.is_entity_cycling = lambda eid: eid == trv_eid
+    coordinator.valve_manager.is_entity_cycling = lambda eid: eid == trv_eid
 
     captured: list[dict] = []
-    original = coordinator._coil_dry_manager.async_process_room
+    original = coordinator.coil_dry_manager.async_process_room
 
     async def _spy(**kwargs):
         captured.append(kwargs)
         return await original(**kwargs)
 
-    coordinator._coil_dry_manager.async_process_room = _spy
+    coordinator.coil_dry_manager.async_process_room = _spy
     await _run_cycle(coordinator, COOLING_TEMP)
 
     assert captured, "the manager was never called"
     assert captured[-1]["exclude_eids"] == {trv_eid}
-    assert captured[-1]["can_activate"] == coordinator._compressor_manager.check_can_activate
+    assert captured[-1]["can_activate"] == coordinator.compressor_manager.check_can_activate
 
 
 @pytest.mark.asyncio
@@ -526,7 +526,7 @@ async def test_running_phase_ends_when_control_is_disabled_mid_run(hass, mock_co
     frozen_time[0] += COOLING_RUN_SECONDS
     rs = await _run_cycle(coordinator, IDLE_TEMP)
     assert rs["coil_dry_phase"] == "blow"
-    assert coordinator._coil_dry_manager.state_for(AC_EID).prev_fan_mode == "auto"
+    assert coordinator.coil_dry_manager.state_for(AC_EID).prev_fan_mode == "auto"
 
     # Control switched off while the fan is still running.
     store.get_settings.return_value["climate_control_active"] = False
@@ -534,7 +534,7 @@ async def test_running_phase_ends_when_control_is_disabled_mid_run(hass, mock_co
     rs = await _run_cycle(coordinator, IDLE_TEMP)
 
     assert rs["coil_dry_active"] is False
-    st = coordinator._coil_dry_manager.state_for(AC_EID)
+    st = coordinator.coil_dry_manager.state_for(AC_EID)
     assert st.phase is None, "the run must be ended, not left hanging"
     assert st.prev_fan_mode == "auto", "the fan restore must stay pending"
 
@@ -593,16 +593,16 @@ async def test_room_removal_clears_coil_dry_state(hass, mock_config_entry, froze
     coordinator = _create_coordinator(hass, mock_config_entry)
 
     await _run_cycle(coordinator, COOLING_TEMP)
-    assert coordinator._coil_dry_manager.state_for(AC_EID) is not None
+    assert coordinator.coil_dry_manager.state_for(AC_EID) is not None
 
     coordinator.async_request_refresh = AsyncMock()
-    coordinator._history_store = None
+    coordinator.history_store = None
     mock_registry = MagicMock()
     mock_registry.entities.values.return_value = []
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_registry):
         await coordinator.async_room_removed("living_room")
 
-    assert coordinator._coil_dry_manager.state_for(AC_EID) is None
+    assert coordinator.coil_dry_manager.state_for(AC_EID) is None
 
 
 @pytest.mark.asyncio

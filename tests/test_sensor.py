@@ -29,10 +29,8 @@ async def test_setup_entry_creates_entities(hass, mock_config_entry, store):
     await store.async_save_room("room_a", {"thermostats": ["climate.trv1"]})
 
     coordinator = _make_coordinator()
-    hass.data[DOMAIN] = {
-        mock_config_entry.entry_id: coordinator,
-        "store": store,
-    }
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
     add_entities = MagicMock()
 
     await async_setup_entry(hass, mock_config_entry, add_entities)
@@ -51,10 +49,8 @@ async def test_setup_entry_no_rooms(hass, mock_config_entry, store):
     await store.async_load()
 
     coordinator = _make_coordinator()
-    hass.data[DOMAIN] = {
-        mock_config_entry.entry_id: coordinator,
-        "store": store,
-    }
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
     add_entities = MagicMock()
 
     await async_setup_entry(hass, mock_config_entry, add_entities)
@@ -71,10 +67,8 @@ async def test_setup_entry_multiple_rooms(hass, mock_config_entry, store):
     await store.async_save_room("room_b", {"thermostats": ["climate.trv2"]})
 
     coordinator = _make_coordinator()
-    hass.data[DOMAIN] = {
-        mock_config_entry.entry_id: coordinator,
-        "store": store,
-    }
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
     add_entities = MagicMock()
 
     await async_setup_entry(hass, mock_config_entry, add_entities)

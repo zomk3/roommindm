@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { ClimateMode, HomeAssistant, OverrideType, RoomConfig } from "../types";
 import { localize, uiLanguage, type TranslationKey } from "../utils/localize";
-import { errorText } from "../utils/errors";
+import { errorText, useBackendErrors } from "../utils/errors";
 import { deviceAbilities, modeFits } from "../utils/device-utils";
 import {
   getModeClass,
@@ -170,7 +170,10 @@ export class RoomMindRoomCard extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has("hass") && this.hass) setFeedHass(this.hass);
+    if (changed.has("hass") && this.hass) {
+      setFeedHass(this.hass);
+      useBackendErrors(this.hass);
+    }
   }
 
   /** Compact hides the labels of its icon buttons; the card has no rs-tooltip, so `title`. */

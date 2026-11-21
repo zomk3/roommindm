@@ -95,7 +95,7 @@ class TestMPCActivation:
     async def test_mpc_activates_after_training(self, coordinator, real_store, frozen_ts):
         """After enough EKF observations, coordinator should use MPC (not bang-bang)."""
         await setup_room(real_store)
-        _train_model_manager(coordinator._model_manager, "living_room")
+        _train_model_manager(coordinator.model_manager, "living_room")
 
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="18.0"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(ACTIVE_SCHEDULE)
@@ -112,7 +112,7 @@ class TestMPCActivation:
     async def test_mpc_proportional_power_varies_with_distance(self, coordinator, real_store, frozen_ts):
         """MPC power fraction should be higher when further from target."""
         await setup_room(real_store)
-        _train_model_manager(coordinator._model_manager, "living_room")
+        _train_model_manager(coordinator.model_manager, "living_room")
 
         # Far from target (15C vs 21C target)
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="15.0"))
@@ -137,7 +137,7 @@ class TestMPCActivation:
     async def test_mpc_idles_at_target(self, coordinator, real_store, frozen_ts):
         """When current temp is at or above target, MPC should idle."""
         await setup_room(real_store)
-        _train_model_manager(coordinator._model_manager, "living_room")
+        _train_model_manager(coordinator.model_manager, "living_room")
 
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.5"))
         coordinator.hass.services.async_call = _make_schedule_service_mock(ACTIVE_SCHEDULE)
@@ -157,7 +157,7 @@ class TestMPCPreheating:
         (comfort 21C). Room is at 17C. MPC should pre-heat.
         """
         await setup_room(real_store)
-        _train_model_manager(coordinator._model_manager, "living_room")
+        _train_model_manager(coordinator.model_manager, "living_room")
 
         # Schedule state "off" -> current target is eco (17C)
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="17.0", schedule_state="off"))
@@ -175,7 +175,7 @@ class TestMPCPreheating:
     async def test_no_preheating_at_target(self, coordinator, real_store, frozen_ts):
         """When already at comfort temp, no preheating needed before schedule."""
         await setup_room(real_store)
-        _train_model_manager(coordinator._model_manager, "living_room")
+        _train_model_manager(coordinator.model_manager, "living_room")
 
         # Already at comfort temp, schedule off
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.0", schedule_state="off"))
@@ -190,7 +190,7 @@ class TestMPCPreheating:
     async def test_no_preheating_without_upcoming_blocks(self, coordinator, real_store, frozen_ts):
         """Without upcoming schedule blocks, MPC sees constant eco target - no preheating."""
         await setup_room(real_store)
-        _train_model_manager(coordinator._model_manager, "living_room")
+        _train_model_manager(coordinator.model_manager, "living_room")
 
         # At eco temp, schedule off. Schedule data has no blocks for today.
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="17.0", schedule_state="off"))

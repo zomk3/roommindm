@@ -54,8 +54,8 @@ async def test_sensor_dropout_staleness_timeout(hass, mock_config_entry):
 
     # Manually expire the cache
     area_id = "living_room_abc12345"
-    cached_temp, _ = coordinator._last_valid_temps[area_id]
-    coordinator._last_valid_temps[area_id] = (cached_temp, time.monotonic() - MAX_SENSOR_STALENESS - 1)
+    cached_temp, _ = coordinator.last_valid_temps[area_id]
+    coordinator.last_valid_temps[area_id] = (cached_temp, time.monotonic() - MAX_SENSOR_STALENESS - 1)
 
     # Cycle 2: sensor dropout with expired cache → idle
     hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=None))
@@ -117,15 +117,15 @@ async def test_sensor_dropout_min_run_preserved(hass, mock_config_entry):
     await coordinator._async_update_data()
 
     area_id = "living_room_abc12345"
-    assert area_id in coordinator._mode_on_since, "_mode_on_since should be set after heating starts"
-    ts_before = coordinator._mode_on_since[area_id]
+    assert area_id in coordinator.mode_on_since, "_mode_on_since should be set after heating starts"
+    ts_before = coordinator.mode_on_since[area_id]
 
     # Sensor dropout
     hass.states.get = MagicMock(side_effect=make_mock_states_get(temp=None))
     await coordinator._async_update_data()
 
-    assert area_id in coordinator._mode_on_since, "_mode_on_since should survive sensor dropout"
-    assert coordinator._mode_on_since[area_id] == ts_before, "timestamp should not change"
+    assert area_id in coordinator.mode_on_since, "_mode_on_since should survive sensor dropout"
+    assert coordinator.mode_on_since[area_id] == ts_before, "timestamp should not change"
 
 
 @pytest.mark.asyncio
@@ -154,14 +154,14 @@ async def test_room_removal_clears_cache(hass, mock_config_entry):
     await coordinator._async_update_data()
 
     area_id = "living_room_abc12345"
-    assert area_id in coordinator._last_valid_temps
+    assert area_id in coordinator.last_valid_temps
 
     coordinator.async_request_refresh = AsyncMock()
     with patch("homeassistant.helpers.entity_registry.async_get") as mock_er:
         mock_er.return_value = MagicMock(entities=MagicMock(values=MagicMock(return_value=[])))
         await coordinator.async_room_removed(area_id)
 
-    assert area_id not in coordinator._last_valid_temps
+    assert area_id not in coordinator.last_valid_temps
 
 
 @pytest.mark.asyncio
@@ -190,8 +190,8 @@ async def test_managed_mode_dropout_uses_cache(hass, mock_config_entry):
     await coordinator._async_update_data()
 
     area_id = "living_room_abc12345"
-    assert area_id in coordinator._last_valid_temps
-    cached_val, _ = coordinator._last_valid_temps[area_id]
+    assert area_id in coordinator.last_valid_temps
+    cached_val, _ = coordinator.last_valid_temps[area_id]
     assert cached_val == 19.0
 
     # Cycle 2: device also unavailable → cache kicks in

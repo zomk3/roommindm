@@ -19,7 +19,7 @@ class TestMultiCycle:
         for _ in range(5):
             await coordinator._async_update_data()
 
-        model = coordinator._model_manager.get_model("living_room")
+        model = coordinator.model_manager.get_model("living_room")
         assert model is not None
 
     @pytest.mark.asyncio
@@ -34,7 +34,7 @@ class TestMultiCycle:
 
         # Cycle 2: temp at target -> should idle
         # Backdate mode_on_since to bypass min-run enforcement window
-        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        coordinator.mode_on_since["living_room"] = coordinator.mode_on_since.get("living_room", 0) - 4000
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.5"))
         data2 = await coordinator._async_update_data()
         mode2 = data2["rooms"]["living_room"]["mode"]
@@ -49,13 +49,13 @@ class TestMultiCycle:
 
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="18.0"))
         await coordinator._async_update_data()
-        assert coordinator._previous_modes["living_room"] == "heating"
+        assert coordinator.previous_modes["living_room"] == "heating"
         assert "living_room" not in coordinator._idle_since
 
-        coordinator._mode_on_since["living_room"] -= 4000
+        coordinator.mode_on_since["living_room"] -= 4000
         coordinator.hass.states.get = MagicMock(side_effect=make_hass_states(temp="21.5"))
         await coordinator._async_update_data()
-        assert coordinator._previous_modes["living_room"] == "idle"
+        assert coordinator.previous_modes["living_room"] == "idle"
         idle_since = coordinator._idle_since["living_room"]
 
         await coordinator._async_update_data()
@@ -71,9 +71,9 @@ class TestMultiCycle:
         await setup_room(real_store)
 
         await coordinator._async_update_data()
-        assert "living_room" in coordinator._previous_modes
+        assert "living_room" in coordinator.previous_modes
 
-        prev = coordinator._previous_modes["living_room"]
+        prev = coordinator.previous_modes["living_room"]
         assert prev in ("heating", "cooling", "idle")
 
     @pytest.mark.asyncio

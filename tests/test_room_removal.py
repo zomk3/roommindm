@@ -12,6 +12,7 @@ from custom_components.roommind import async_track_area_changes
 from custom_components.roommind.const import DOMAIN
 from custom_components.roommind.utils.area_utils import REST_SWITCHED_OFF, rooms_with_area, rooms_without_area
 from custom_components.roommind.websocket_api import async_remove_room
+from tests.conftest import wire_coordinator
 
 ROOMS = {"kitchen": {"area_id": "kitchen"}, "old_room": {"area_id": "old_room", "display_name": "Old"}}
 
@@ -33,7 +34,8 @@ def coordinator():
 
 @pytest.fixture
 def rm_hass(hass, store, coordinator):
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    wire_coordinator(hass, coordinator)
     return hass
 
 

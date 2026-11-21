@@ -19,7 +19,7 @@ async def test_cycle_records_recent_temps_and_seeds_from_history(hass, mock_conf
     coordinator = _create_coordinator(hass, mock_config_entry)
     history = MagicMock()
     history.read_detail = MagicMock(return_value=[])
-    coordinator._history_store = history
+    coordinator.history_store = history
     await coordinator._async_update_data()
 
     series = coordinator.recent_temps.get("living_room_abc12345")
@@ -41,7 +41,7 @@ async def test_seed_failure_does_not_break_the_cycle(hass, mock_config_entry):
     coordinator = _create_coordinator(hass, mock_config_entry)
     history = MagicMock()
     history.read_detail = MagicMock(side_effect=OSError("disk"))
-    coordinator._history_store = history
+    coordinator.history_store = history
     data = await coordinator._async_update_data()
 
     assert "living_room_abc12345" in data["rooms"]

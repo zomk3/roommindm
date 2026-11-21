@@ -48,7 +48,7 @@ def model_snapshot(coordinator: Any) -> dict[str, Any]:
 
     Read only, so a traced run stays identical to an untraced one.
     """
-    mgr = getattr(coordinator, "_model_manager", None)
+    mgr = getattr(coordinator, "model_manager", None)
     out: dict[str, Any] = {}
     for area_id, est in (getattr(mgr, "_estimators", None) or {}).items():
         x, p = est._x, est._P

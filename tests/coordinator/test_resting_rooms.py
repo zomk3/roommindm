@@ -109,12 +109,12 @@ async def test_a_resting_room_keeps_its_learned_ac_offsets(hass, mock_config_ent
     coordinator, _ = _coordinator(
         hass, mock_config_entry, {"living_room": SAMPLE_ROOM, "old_room": _resting_room(**{REST_SWITCHED_OFF: True})}
     )
-    coordinator._head_offsets.prune = MagicMock()
+    coordinator.head_offsets.prune = MagicMock()
 
     with patch(AREA_REGISTRY, return_value=_registry("living_room")):
         await coordinator._async_update_data()
 
-    kept = coordinator._head_offsets.prune.call_args[0][0]
+    kept = coordinator.head_offsets.prune.call_args[0][0]
     assert "climate.old_trv" in kept
 
 
@@ -231,7 +231,7 @@ async def test_a_room_deleted_after_the_cycle_took_its_snapshot_is_still_switche
         coordinator.note_room_deleted("old_room", _deleted_room())
         store.get_rooms.return_value = {"living_room": SAMPLE_ROOM}
 
-    coordinator._weather_manager.async_read_forecast = AsyncMock(side_effect=delete_meanwhile)
+    coordinator.weather_manager.async_read_forecast = AsyncMock(side_effect=delete_meanwhile)
     with patch(AREA_REGISTRY, return_value=_registry("living_room", "old_room")):
         await coordinator._async_update_data()
 
@@ -248,9 +248,9 @@ async def test_an_area_deleted_while_its_room_is_processed_leaves_no_run_state(h
     async def area_deleted_meanwhile(room, _settings, _forecast):
         await coordinator.async_room_paused(room["area_id"])
         areas.clear()
-        coordinator._previous_modes[room["area_id"]] = "heating"
+        coordinator.previous_modes[room["area_id"]] = "heating"
         coordinator._ekf_training._synced.add(room["area_id"])
-        coordinator._model_manager.get_estimator(room["area_id"])
+        coordinator.model_manager.get_estimator(room["area_id"])
         return {"mode": "heating"}
 
     coordinator._async_process_room = AsyncMock(side_effect=area_deleted_meanwhile)
@@ -258,16 +258,16 @@ async def test_an_area_deleted_while_its_room_is_processed_leaves_no_run_state(h
     registry.async_list_areas.side_effect = lambda: [SimpleNamespace(id=a) for a in areas]
     with (
         patch(AREA_REGISTRY, return_value=registry),
-        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock(entities={})),
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()),
     ):
         data = await coordinator._async_update_data()
 
     assert "living_room" not in data["rooms"]
-    assert "living_room" not in coordinator._previous_modes
+    assert "living_room" not in coordinator.previous_modes
     # Back with its area, the model first resyncs to the room instead of learning the pause
     assert "living_room" not in coordinator._ekf_training._synced
     # Resting keeps what the room learned
-    assert "living_room" in coordinator._model_manager._estimators
+    assert "living_room" in coordinator.model_manager._estimators
 
 
 @pytest.mark.asyncio
@@ -279,17 +279,17 @@ async def test_a_room_deleted_while_it_is_processed_leaves_no_model(hass, mock_c
 
     async def deleted_meanwhile(room, _settings, _forecast):
         store.get_room.return_value = None
-        coordinator._previous_modes[room["area_id"]] = "heating"
-        coordinator._model_manager.get_estimator(room["area_id"])
+        coordinator.previous_modes[room["area_id"]] = "heating"
+        coordinator.model_manager.get_estimator(room["area_id"])
         return {"mode": "heating"}
 
     coordinator._async_process_room = AsyncMock(side_effect=deleted_meanwhile)
     with (
         patch(AREA_REGISTRY, return_value=_registry("living_room")),
-        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock(entities={})),
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()),
     ):
         data = await coordinator._async_update_data()
 
     assert "living_room" not in data["rooms"]
-    assert "living_room" not in coordinator._previous_modes
-    assert "living_room" not in coordinator._model_manager._estimators
+    assert "living_room" not in coordinator.previous_modes
+    assert "living_room" not in coordinator.model_manager._estimators

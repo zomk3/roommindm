@@ -72,8 +72,8 @@ async def test_cycles_feed_the_tracker_and_the_controller_gets_it(hass, mock_con
         for _ in range(15):
             await coordinator._async_update_data()
             now[0] += HEAD_OFFSET_SETTLE_S / 2
-    assert seen["head_offsets"] is coordinator._head_offsets
-    assert coordinator._head_offsets.offset(AC, "cool") == pytest.approx(1.5)
+    assert seen["head_offsets"] is coordinator.head_offsets
+    assert coordinator.head_offsets.offset(AC, "cool") == pytest.approx(1.5)
 
 
 @pytest.mark.asyncio
@@ -83,7 +83,7 @@ async def test_a_unit_that_is_not_on_teaches_nothing(hass, mock_config_entry, hv
     room = _ac_room()
     _, coordinator = _setup(hass, mock_config_entry, room, _states(hvac=hvac, action="idle", head=30.0))
     tracker = MagicMock()
-    coordinator._head_offsets = tracker
+    coordinator.head_offsets = tracker
     coordinator._observe_head_offsets(room, 28.0)
     args = tracker.observe.call_args.args
     assert args[:4] == (AC, None, 30.0, 28.0)
@@ -94,7 +94,7 @@ async def test_a_unit_on_its_setback_feeds_the_idle_offset(hass, mock_config_ent
     room = _ac_room()
     _, coordinator = _setup(hass, mock_config_entry, room, _states(hvac="cool", action="idle", head=30.0))
     tracker = MagicMock()
-    coordinator._head_offsets = tracker
+    coordinator.head_offsets = tracker
     coordinator._observe_head_offsets(room, 28.0)
     assert tracker.observe.call_args.args[:4] == (AC, "idle", 30.0, 28.0)
 
@@ -105,14 +105,14 @@ async def test_learned_offsets_are_loaded_and_saved(hass, mock_config_entry):
     saved = {AC: {"cool": [1.4, 40]}}
     store, coordinator = _setup(hass, mock_config_entry, room, _states(), settings={"ac_head_offsets": saved})
     await coordinator._async_update_data()
-    assert coordinator._head_offsets.offset(AC, "cool") == pytest.approx(1.5)
+    assert coordinator.head_offsets.offset(AC, "cool") == pytest.approx(1.5)
 
-    coordinator._head_offsets.dirty = True
+    coordinator.head_offsets.dirty = True
     coordinator._thermal_save_count = coordinator_module.THERMAL_SAVE_CYCLES - 1
     await coordinator._async_update_data()
     calls = [c.args[0] for c in store.async_save_settings.call_args_list if "ac_head_offsets" in c.args[0]]
     assert calls and calls[-1]["ac_head_offsets"][AC]["cool"][0] == pytest.approx(1.4)
-    assert coordinator._head_offsets.dirty is False
+    assert coordinator.head_offsets.dirty is False
 
 
 @pytest.mark.asyncio
@@ -121,7 +121,7 @@ async def test_offsets_of_removed_devices_are_dropped(hass, mock_config_entry):
     saved = {AC: {"cool": [1.4, 40]}, "climate.gone": {"cool": [2.0, 40]}}
     _, coordinator = _setup(hass, mock_config_entry, room, _states(), settings={"ac_head_offsets": saved})
     await coordinator._async_update_data()
-    assert set(coordinator._head_offsets.get_state()) == {AC}
+    assert set(coordinator.head_offsets.get_state()) == {AC}
 
 
 @pytest.mark.asyncio
@@ -129,9 +129,9 @@ async def test_no_room_sensor_means_no_learning(hass, mock_config_entry):
     """Without an external sensor the room temperature is the device's own reading."""
     room = {**_ac_room(), "temperature_sensor": ""}
     _, coordinator = _setup(hass, mock_config_entry, room, _states())
-    coordinator._head_offsets.observe = MagicMock()
+    coordinator.head_offsets.observe = MagicMock()
     await coordinator._async_update_data()
-    coordinator._head_offsets.observe.assert_not_called()
+    coordinator.head_offsets.observe.assert_not_called()
 
 
 def test_device_setpoint_display_is_in_the_acs_frame():

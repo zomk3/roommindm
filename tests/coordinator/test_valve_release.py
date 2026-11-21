@@ -277,7 +277,7 @@ async def test_held_valve_trv_shows_the_opening_it_is_held_at(hass, mock_config_
     assert data["rooms"][area]["heating_power"] == 80
 
     wire("heat", "21.3", temperature=25.0, hvac_action="heating")
-    coordinator._mode_on_since[area] -= 3600
+    coordinator.mode_on_since[area] -= 3600
     room = (await coordinator._async_update_data())["rooms"][area]
 
     assert room["compressor_protection_reason"] == "min_run"
@@ -334,7 +334,7 @@ async def test_mixed_hold_shows_the_ac_boost_not_the_valve_minimum(hass, mock_co
         await coordinator._async_update_data()
 
     wire("heat", "21.3", action="heating", temperature=25.0)
-    coordinator._mode_on_since[AREA] -= 3600
+    coordinator.mode_on_since[AREA] -= 3600
     rs = (await coordinator._async_update_data())["rooms"][AREA]
     assert direct_valve.held_opening("climate.living_room") == MIN_POWER_FRACTION
     assert rs["compressor_protection_reason"] == "min_run"

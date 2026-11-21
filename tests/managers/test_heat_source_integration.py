@@ -199,7 +199,7 @@ class TestHeatSourceIntegration:
         assert ac_modes[0]["hvac_mode"] in ("heat", "heat_cool")
 
         # Orchestrator state should be "secondary"
-        assert coordinator._heat_source_states.get("living_room") == "secondary"
+        assert coordinator.heat_source_states.get("living_room") == "secondary"
 
     @pytest.mark.asyncio
     async def test_large_gap_both_devices_receive_commands(self, coordinator, real_store, hass):
@@ -233,7 +233,7 @@ class TestHeatSourceIntegration:
         # Orchestrator state should be "both"
         # Need gap > large_gap_threshold + hysteresis = 3.0 + 0.3 = 3.3C from "none"
         # Gap is 4.0C, so should be "both"
-        assert coordinator._heat_source_states.get("living_room") == "both"
+        assert coordinator.heat_source_states.get("living_room") == "both"
 
     @pytest.mark.asyncio
     async def test_gap_shrinks_transitions_from_both_to_secondary_with_hysteresis(self, coordinator, real_store, hass):
@@ -243,27 +243,27 @@ class TestHeatSourceIntegration:
         # --- Cycle 1: large gap -> both ---
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="17.0", outdoor_temp="10.0"))
         await coordinator._async_update_data()
-        assert coordinator._heat_source_states.get("living_room") == "both"
+        assert coordinator.heat_source_states.get("living_room") == "both"
 
         # --- Cycle 2: gap narrows to 1.3C ---
         # primary_delta - hysteresis = 1.5 - 0.3 = 1.2
         # Gap 1.3C > 1.2, so hysteresis keeps us on "both"
         hass.services.async_call.reset_mock()
         # Backdate mode_on_since to bypass any min-run window
-        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        coordinator.mode_on_since["living_room"] = coordinator.mode_on_since.get("living_room", 0) - 4000
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="19.7", outdoor_temp="10.0"))
         await coordinator._async_update_data()
-        assert coordinator._heat_source_states.get("living_room") == "both", (
+        assert coordinator.heat_source_states.get("living_room") == "both", (
             "Should stay on 'both' due to hysteresis (gap 1.3 > 1.2)"
         )
 
         # --- Cycle 3: gap narrows to 0.8C ---
         # 0.8 < primary_delta - hysteresis = 1.2, so should switch to "secondary"
         hass.services.async_call.reset_mock()
-        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        coordinator.mode_on_since["living_room"] = coordinator.mode_on_since.get("living_room", 0) - 4000
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="20.2", outdoor_temp="10.0"))
         await coordinator._async_update_data()
-        assert coordinator._heat_source_states.get("living_room") == "secondary", (
+        assert coordinator.heat_source_states.get("living_room") == "secondary", (
             "Should switch to 'secondary' when gap drops below hysteresis band"
         )
 
@@ -390,7 +390,7 @@ class TestHeatSourceIntegration:
         # Cycle 1: orchestration ON, large gap -> state populated
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="17.0", outdoor_temp="10.0"))
         await coordinator._async_update_data()
-        assert "living_room" in coordinator._heat_source_states
+        assert "living_room" in coordinator.heat_source_states
 
         # Disable orchestration
         rooms = real_store.get_rooms()
@@ -400,11 +400,11 @@ class TestHeatSourceIntegration:
 
         # Cycle 2: orchestration OFF -> state should be cleaned up
         hass.services.async_call.reset_mock()
-        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        coordinator.mode_on_since["living_room"] = coordinator.mode_on_since.get("living_room", 0) - 4000
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="17.0", outdoor_temp="10.0"))
         await coordinator._async_update_data()
 
-        assert "living_room" not in coordinator._heat_source_states, (
+        assert "living_room" not in coordinator.heat_source_states, (
             "Heat source state should be removed when orchestration is disabled"
         )
 
@@ -435,7 +435,7 @@ class TestHeatSourceIntegration:
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="19.0", outdoor_temp="12.0"))
         await coordinator._async_update_data()
 
-        assert coordinator._heat_source_states.get("living_room") == "secondary", (
+        assert coordinator.heat_source_states.get("living_room") == "secondary", (
             "Mild weather (12C > 5C threshold) should prefer secondary (AC)"
         )
 
@@ -455,7 +455,7 @@ class TestHeatSourceIntegration:
         #   else -> secondary
         # So gap=2.0 >= 1.8 and outdoor=-5 < 5 -> primary
         hass.services.async_call.reset_mock()
-        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        coordinator.mode_on_since["living_room"] = coordinator.mode_on_since.get("living_room", 0) - 4000
         # Reset _heat_source_states to "none" to avoid secondary->secondary hysteresis
         # In real use, after several cycles in secondary, dropping outdoor temp would
         # mean the "else" branch re-evaluates, but previous_active_sources="secondary"
@@ -463,7 +463,7 @@ class TestHeatSourceIntegration:
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="19.0", outdoor_temp="-5.0"))
         await coordinator._async_update_data()
 
-        assert coordinator._heat_source_states.get("living_room") == "primary", (
+        assert coordinator.heat_source_states.get("living_room") == "primary", (
             "Cold weather (-5C < 5C threshold) should prefer primary (TRV/boiler)"
         )
 
@@ -490,14 +490,14 @@ class TestHeatSourceIntegration:
         # Cycle 1: normal conditions -> orchestrator sets state to "secondary".
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="20.5", outdoor_temp="10.0"))
         await coordinator._async_update_data()
-        assert coordinator._heat_source_states.get("living_room") == "secondary"
+        assert coordinator.heat_source_states.get("living_room") == "secondary"
 
         # Cycle 2: temperature sensor goes unavailable -> coordinator's
         # current_temp becomes None -> orchestrator returns None.
         # Drive the coordinator through this state explicitly via the
         # evaluate_heat_sources patch to avoid relying on other fallbacks.
         hass.services.async_call.reset_mock()
-        coordinator._mode_on_since["living_room"] = coordinator._mode_on_since.get("living_room", 0) - 4000
+        coordinator.mode_on_since["living_room"] = coordinator.mode_on_since.get("living_room", 0) - 4000
         hass.states.get = MagicMock(side_effect=_make_hass_states(temp="20.5", outdoor_temp="10.0"))
         with patch(
             "custom_components.roommind.coordinator.evaluate_heat_sources",
@@ -505,7 +505,7 @@ class TestHeatSourceIntegration:
         ):
             await coordinator._async_update_data()
 
-        assert "living_room" not in coordinator._heat_source_states, (
+        assert "living_room" not in coordinator.heat_source_states, (
             "Stale orchestration state must be cleared when the orchestrator "
             "returns None so the master-demand filter doesn't act on it"
         )

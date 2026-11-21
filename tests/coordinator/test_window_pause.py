@@ -228,7 +228,7 @@ class TestRoomMindCoordinator:
         )
         assert room_state["mode"] == "heating"
         assert room_state["window_open"] is False
-        assert coordinator._window_manager.is_pending("living_room_abc12345") is False
+        assert coordinator.window_manager.is_pending("living_room_abc12345") is False
         assert self._climate_calls(hass) != []
 
     @pytest.mark.asyncio
@@ -238,7 +238,7 @@ class TestRoomMindCoordinator:
             request, hass, mock_config_entry, CoreState.starting, registered=False
         )
         assert room_state["mode"] == "idle"
-        assert coordinator._window_manager.is_pending("living_room_abc12345") is True
+        assert coordinator.window_manager.is_pending("living_room_abc12345") is True
         assert self._climate_calls(hass) == []
 
     @pytest.mark.asyncio
@@ -248,7 +248,7 @@ class TestRoomMindCoordinator:
             request, hass, mock_config_entry, CoreState.running, registered=True
         )
         assert room_state["mode"] == "idle"
-        assert coordinator._window_manager.is_pending("living_room_abc12345") is True
+        assert coordinator.window_manager.is_pending("living_room_abc12345") is True
         assert self._climate_calls(hass) == []
 
     @pytest.mark.asyncio
@@ -259,7 +259,7 @@ class TestRoomMindCoordinator:
         with patch("custom_components.roommind.managers.window_manager.time") as mock_time:
             mock_time.time.return_value = time.time() + MAX_SENSOR_STALENESS + 1
             data = await coordinator._async_update_data()
-        assert coordinator._window_manager.is_pending("living_room_abc12345") is False
+        assert coordinator.window_manager.is_pending("living_room_abc12345") is False
         assert data["rooms"]["living_room_abc12345"]["window_open"] is False
 
     @pytest.mark.asyncio
@@ -300,7 +300,7 @@ class TestRoomMindCoordinator:
         )
 
         coordinator = _create_coordinator(hass, mock_config_entry)
-        manager = coordinator._coil_dry_manager
+        manager = coordinator.coil_dry_manager
         with patch.object(manager, "async_process_room", wraps=manager.async_process_room) as process_room:
             await coordinator._async_update_data()
 
@@ -374,7 +374,7 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Mark room as already known (simulates prior cycle with window closed)
-        coordinator._window_manager._seen.add("living_room_abc12345")
+        coordinator.window_manager._seen.add("living_room_abc12345")
         data = await coordinator._async_update_data()
 
         room_state = data["rooms"]["living_room_abc12345"]
@@ -401,8 +401,8 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Pre-set: window has been open for 130s (exceeds 120s delay)
-        coordinator._window_manager._seen.add("living_room_abc12345")
-        coordinator._window_manager._open_since["living_room_abc12345"] = time.time() - 130
+        coordinator.window_manager._seen.add("living_room_abc12345")
+        coordinator.window_manager._open_since["living_room_abc12345"] = time.time() - 130
         data = await coordinator._async_update_data()
 
         room_state = data["rooms"]["living_room_abc12345"]
@@ -429,7 +429,7 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Pre-set: room was paused (window was open), now window is closed but delay not met
-        coordinator._window_manager._paused["living_room_abc12345"] = True
+        coordinator.window_manager._paused["living_room_abc12345"] = True
         data = await coordinator._async_update_data()
 
         room_state = data["rooms"]["living_room_abc12345"]
@@ -456,8 +456,8 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Pre-set: room was paused and window has been closed for 310s (exceeds 300s delay)
-        coordinator._window_manager._paused["living_room_abc12345"] = True
-        coordinator._window_manager._closed_since["living_room_abc12345"] = time.time() - 310
+        coordinator.window_manager._paused["living_room_abc12345"] = True
+        coordinator.window_manager._closed_since["living_room_abc12345"] = time.time() - 310
         data = await coordinator._async_update_data()
 
         room_state = data["rooms"]["living_room_abc12345"]
@@ -490,12 +490,12 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Mark room as already known (simulates prior cycle with window closed)
-        coordinator._window_manager._seen.add("living_room_abc12345")
+        coordinator.window_manager._seen.add("living_room_abc12345")
 
         with patch.object(
-            coordinator._model_manager,
+            coordinator.model_manager,
             "update_window_open",
-            wraps=coordinator._model_manager.update_window_open,
+            wraps=coordinator.model_manager.update_window_open,
         ) as mock_win_update:
             data = await coordinator._async_update_data()
 
@@ -542,16 +542,16 @@ class TestRoomMindCoordinator:
         # Simulate residual heat: heating was active, then stopped recently.
         # _on_since before _off_since gives a non-zero heat duration, and
         # a recent _off_since means the exponential decay hasn't elapsed.
-        coordinator._residual_tracker._on_since["living_room_abc12345"] = time.time() - 120
-        coordinator._residual_tracker._off_since["living_room_abc12345"] = time.time() - 5
-        coordinator._residual_tracker._off_power["living_room_abc12345"] = 1.0
+        coordinator.residual_tracker._on_since["living_room_abc12345"] = time.time() - 120
+        coordinator.residual_tracker._off_since["living_room_abc12345"] = time.time() - 5
+        coordinator.residual_tracker._off_power["living_room_abc12345"] = 1.0
         # Also set previous_mode so get_q_residual returns > 0
-        coordinator._previous_modes["living_room_abc12345"] = MODE_IDLE
+        coordinator.previous_modes["living_room_abc12345"] = MODE_IDLE
 
         with patch.object(
-            coordinator._model_manager,
+            coordinator.model_manager,
             "update_window_open",
-            wraps=coordinator._model_manager.update_window_open,
+            wraps=coordinator.model_manager.update_window_open,
         ) as mock_win_update:
             await coordinator._async_update_data()
 
@@ -581,9 +581,9 @@ class TestRoomMindCoordinator:
         coordinator = _create_coordinator(hass, mock_config_entry)
 
         with patch.object(
-            coordinator._model_manager,
+            coordinator.model_manager,
             "update_window_open",
-            wraps=coordinator._model_manager.update_window_open,
+            wraps=coordinator.model_manager.update_window_open,
         ) as mock_win_update:
             await coordinator._async_update_data()
             await coordinator._async_update_data()
@@ -645,7 +645,7 @@ class TestRoomMindCoordinator:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         # Mark room as already known (simulates prior cycle with window closed)
-        coordinator._window_manager._seen.add("living_room_abc12345")
+        coordinator.window_manager._seen.add("living_room_abc12345")
 
         # Window opens
         window_state = MagicMock()
@@ -654,7 +654,7 @@ class TestRoomMindCoordinator:
         data = await coordinator._async_update_data()
         room_state = data["rooms"]["living_room_abc12345"]
         assert room_state["mode"] == "heating"
-        assert "living_room_abc12345" in coordinator._window_manager._open_since
+        assert "living_room_abc12345" in coordinator.window_manager._open_since
 
         # Window closes before delay reached
         window_state.state = "off"
@@ -662,7 +662,7 @@ class TestRoomMindCoordinator:
         room_state = data["rooms"]["living_room_abc12345"]
         assert room_state["mode"] == "heating"
         assert room_state["window_open"] is False
-        assert "living_room_abc12345" not in coordinator._window_manager._open_since
+        assert "living_room_abc12345" not in coordinator.window_manager._open_since
 
     @pytest.mark.asyncio
     async def test_room_removed_cleans_up_window_state(self, hass, mock_config_entry):
@@ -673,9 +673,9 @@ class TestRoomMindCoordinator:
         area_id = "living_room_abc12345"
 
         # Pre-populate window delay state
-        coordinator._window_manager._open_since[area_id] = time.time() - 60
-        coordinator._window_manager._closed_since[area_id] = time.time() - 30
-        coordinator._window_manager._paused[area_id] = True
+        coordinator.window_manager._open_since[area_id] = time.time() - 60
+        coordinator.window_manager._closed_since[area_id] = time.time() - 30
+        coordinator.window_manager._paused[area_id] = True
 
         mock_registry = MagicMock()
         mock_registry.entities = MagicMock()
@@ -686,10 +686,10 @@ class TestRoomMindCoordinator:
         ):
             await coordinator.async_room_removed(area_id)
 
-        assert area_id not in coordinator._window_manager._open_since
-        assert area_id not in coordinator._window_manager._closed_since
-        assert area_id not in coordinator._window_manager._paused
-        assert area_id not in coordinator._window_manager._seen
+        assert area_id not in coordinator.window_manager._open_since
+        assert area_id not in coordinator.window_manager._closed_since
+        assert area_id not in coordinator.window_manager._paused
+        assert area_id not in coordinator.window_manager._seen
 
 
 class TestCoverWindowHold:
@@ -710,7 +710,7 @@ class TestCoverWindowHold:
 
         coordinator = _create_coordinator(hass, mock_config_entry)
         if seen:
-            coordinator._window_manager._seen.add("living_room_abc12345")
+            coordinator.window_manager._seen.add("living_room_abc12345")
         with patch.object(
             coordinator._cover_orchestrator, "async_process", wraps=coordinator._cover_orchestrator.async_process
         ) as process:

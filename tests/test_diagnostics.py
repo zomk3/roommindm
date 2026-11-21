@@ -58,31 +58,31 @@ def _make_coordinator(
     coordinator.rooms = rooms or {}
     coordinator.outdoor_temp = outdoor_temp
     coordinator.outdoor_humidity = outdoor_humidity
-    coordinator._weather_manager._outdoor_forecast = forecast or []
-    coordinator._history_store = history_store
-    coordinator._model_manager._estimators = estimators or {}
+    coordinator.weather_manager._outdoor_forecast = forecast or []
+    coordinator.history_store = history_store
+    coordinator.model_manager._estimators = estimators or {}
 
     # Window manager
-    coordinator._window_manager._paused = window_paused or {}
-    coordinator._window_manager._open_since = window_open_since or {}
-    coordinator._window_manager._closed_since = window_closed_since or {}
+    coordinator.window_manager._paused = window_paused or {}
+    coordinator.window_manager._open_since = window_open_since or {}
+    coordinator.window_manager._closed_since = window_closed_since or {}
 
     # Cover manager
-    coordinator._cover_manager._states = cover_states or {}
+    coordinator.cover_manager._states = cover_states or {}
 
     # Heat source states
-    coordinator._heat_source_states = heat_source_states or {}
+    coordinator.heat_source_states = heat_source_states or {}
 
     # Compressor manager
-    coordinator._compressor_manager._groups = compressor_groups or {}
-    coordinator._compressor_manager._states = compressor_states or {}
+    coordinator.compressor_manager._groups = compressor_groups or {}
+    coordinator.compressor_manager._states = compressor_states or {}
 
     # Valve manager
-    coordinator._valve_manager._cycling = valve_cycling or {}
-    coordinator._valve_manager._last_actuation = valve_last_actuation or {}
+    coordinator.valve_manager._cycling = valve_cycling or {}
+    coordinator.valve_manager._last_actuation = valve_last_actuation or {}
 
     # Coil dry manager
-    coordinator._coil_dry_manager.get_state.return_value = {}
+    coordinator.coil_dry_manager.get_state.return_value = {}
 
     return coordinator
 
@@ -167,7 +167,9 @@ async def test_diagnostics_with_coordinator_and_model(hass, mock_config_entry):
     alice_state.state = "home"
     hass.states.get = MagicMock(return_value=alice_state)
 
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -191,7 +193,9 @@ async def test_diagnostics_room_without_estimator(hass, mock_config_entry):
 
     coordinator = _make_coordinator(rooms={})
 
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert "model" not in result["rooms"]["room_a"]
@@ -218,7 +222,9 @@ async def test_diagnostics_history_store_with_rows(hass, mock_config_entry):
 
     coordinator = _make_coordinator(history_store=history_store)
 
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert len(result["recent_history"]["room_a"]) == 1
@@ -237,7 +243,9 @@ async def test_diagnostics_history_store_exception(hass, mock_config_entry):
 
     coordinator = _make_coordinator(history_store=history_store)
 
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["recent_history"]["room_a"] == []
@@ -283,7 +291,9 @@ async def test_diagnostics_history_capped_at_240(hass, mock_config_entry):
 
     coordinator = _make_coordinator(history_store=history_store)
 
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert len(result["recent_history"]["room_a"]) == 240
@@ -372,7 +382,8 @@ async def test_diagnostics_device_states_included(hass, mock_config_entry):
     hass.states.get = MagicMock(return_value=state)
 
     coordinator = _make_coordinator()
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -393,7 +404,8 @@ async def test_diagnostics_window_state(hass, mock_config_entry):
         window_paused={"room_a": True},
         window_open_since={"room_a": now - 120},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -418,7 +430,8 @@ async def test_diagnostics_cover_state(hass, mock_config_entry):
     cover_state.user_override_until = now + 600
 
     coordinator = _make_coordinator(cover_states={"room_a": cover_state})
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -447,7 +460,8 @@ async def test_diagnostics_cover_state_no_override(hass, mock_config_entry):
     cover_state.baseline_position = None
 
     coordinator = _make_coordinator(cover_states={"room_a": cover_state})
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -466,7 +480,8 @@ async def test_diagnostics_heat_source_routing(hass, mock_config_entry):
     store.get_rooms.return_value = {"room_a": {}}
 
     coordinator = _make_coordinator(heat_source_states={"room_a": "ac_only"})
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     assert result["rooms"]["room_a"]["heat_source_routing"] == "ac_only"
@@ -493,7 +508,8 @@ async def test_diagnostics_compressor_groups(hass, mock_config_entry):
         compressor_groups={"g1": group_cfg},
         compressor_states={"g1": group_state},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -531,7 +547,8 @@ async def test_diagnostics_compressor_master_device(hass, mock_config_entry):
         compressor_groups={"g1": group_cfg},
         compressor_states={"g1": group_state},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -555,7 +572,8 @@ async def test_diagnostics_valve_protection(hass, mock_config_entry):
         valve_cycling={"climate.trv1": now - 30},
         valve_last_actuation={"climate.trv1": now - 3600},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -574,7 +592,8 @@ async def test_diagnostics_window_closed_since(hass, mock_config_entry):
     coordinator = _make_coordinator(
         window_closed_since={"room_a": now - 60},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -604,7 +623,8 @@ async def test_diagnostics_compressor_off_since(hass, mock_config_entry):
         compressor_groups={"g1": group_cfg},
         compressor_states={"g1": group_state},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -626,7 +646,8 @@ async def test_diagnostics_room_with_temperature_sensor(hass, mock_config_entry)
     hass.states.get = MagicMock(return_value=sensor_state)
 
     coordinator = _make_coordinator()
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -644,7 +665,8 @@ async def test_diagnostics_room_with_temperature_sensor_not_found(hass, mock_con
     hass.states.get = MagicMock(return_value=None)
 
     coordinator = _make_coordinator()
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -668,7 +690,8 @@ async def test_diagnostics_room_with_active_schedule(hass, mock_config_entry):
     coordinator = _make_coordinator(
         rooms={"room_a": {"active_schedule_index": 0}},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -692,7 +715,8 @@ async def test_diagnostics_room_schedule_entity_not_found(hass, mock_config_entr
     coordinator = _make_coordinator(
         rooms={"room_a": {"active_schedule_index": 0}},
     )
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -717,7 +741,8 @@ async def test_diagnostics_cover_with_last_command_ts(hass, mock_config_entry):
     cover_state.user_override_until = 0
 
     coordinator = _make_coordinator(cover_states={"room_a": cover_state})
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -753,8 +778,9 @@ async def test_diagnostics_include_coil_dry(hass, mock_config_entry):
     coil_dry_manager.load_state({"climate.living_ac": {"wet_seconds": 600.0, "phase": "blow", "phase_until": 9e12}})
 
     coordinator = _make_coordinator()
-    coordinator._coil_dry_manager = coil_dry_manager
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    coordinator.coil_dry_manager = coil_dry_manager
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -776,11 +802,12 @@ async def test_diagnostics_radiator_room_reports_its_learned_afterglow(hass, moc
         "hall": {"heating_system_type": "underfloor", "thermostats": ["climate.ufh"]},
     }
     coordinator = _make_coordinator(rooms={"bed": {"mode": "idle"}, "hall": {"mode": "idle"}})
-    coordinator._model_manager.get_residual_scale.return_value = 4.25
-    coordinator._model_manager.get_residual_tau.return_value = 35.0
-    coordinator._residual_tracker.get_q_residual.return_value = 0.123456
+    coordinator.model_manager.get_residual_scale.return_value = 4.25
+    coordinator.model_manager.get_residual_tau.return_value = 35.0
+    coordinator.residual_tracker.get_q_residual.return_value = 0.123456
     hass.states.get = MagicMock(return_value=None)
-    hass.data[DOMAIN] = {"store": store, "coordinator": coordinator}
+    hass.data[DOMAIN] = {"store": store}
+    mock_config_entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
@@ -788,7 +815,7 @@ async def test_diagnostics_radiator_room_reports_its_learned_afterglow(hass, moc
     assert bed["residual_scale"] == 4.25
     assert bed["residual_decay_minutes"] == 35.0
     assert bed["q_residual"] == 0.1235
-    calls = {c.args[0]: c.args for c in coordinator._residual_tracker.get_q_residual.call_args_list}
+    calls = {c.args[0]: c.args for c in coordinator.residual_tracker.get_q_residual.call_args_list}
     assert calls["bed"][3:] == (4.25, 35.0)
     # Other systems keep the profile and show no learned afterglow
     assert calls["hall"][3:] == (1.0, None)

@@ -125,10 +125,10 @@ async def test_coordinator_notes_learned_rooms_on_thermal_save(hass, mock_config
     hass.states.get = MagicMock(side_effect=make_mock_states_get())
     hass.services.async_call = AsyncMock()
     coordinator = _create_coordinator(hass, mock_config_entry)
-    coordinator._model_manager.get_estimator("living_room_abc12345")
+    coordinator.model_manager.get_estimator("living_room_abc12345")
     coordinator._thermal_save_count = THERMAL_SAVE_CYCLES - 1
     await coordinator._async_update_data()
 
-    hist = coordinator._model_manager.get_estimator("living_room_abc12345").confidence_history
+    hist = coordinator.model_manager.get_estimator("living_room_abc12345").confidence_history
     assert len(hist) == 1
-    assert "outdoor" not in coordinator._model_manager.get_room_ids()
+    assert "outdoor" not in coordinator.model_manager.get_room_ids()

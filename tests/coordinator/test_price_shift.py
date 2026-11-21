@@ -66,15 +66,15 @@ async def test_status_and_orchestration_level(hass, mock_config_entry):
 @pytest.mark.asyncio
 async def test_price_history_is_read_from_the_recorded_rows(hass, mock_config_entry):
     coordinator, _ = await _cycle(hass, mock_config_entry, SAMPLE_ROOM, ("on", None))
-    coordinator._history_store = MagicMock()
-    coordinator._history_store.read_detail.return_value = [
+    coordinator.history_store = MagicMock()
+    coordinator.history_store.read_detail.return_value = [
         {"timestamp": "100", "price": "20.5"},
         {"timestamp": "200", "price": ""},
     ]
-    coordinator._history_store.read_history.return_value = [{"timestamp": "50", "price": "19"}]
+    coordinator.history_store.read_history.return_value = [{"timestamp": "50", "price": "19"}]
     hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: fn(*a))
     assert await coordinator._async_load_price_history() == [(100.0, 20.5), (50.0, 19.0)]
-    coordinator._history_store = None
+    coordinator.history_store = None
     assert await coordinator._async_load_price_history() == []
 
 
