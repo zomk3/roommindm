@@ -583,7 +583,7 @@
   "mold.room_heating_hint": "Raise the temperature on mold risk. Uses the intensity from the settings, where Mold Prevention must be enabled.",
   "mold.room_ventilation_title": "Airing hint",
   "mold.room_ventilation_hint": "Recommend airing when humidity reaches the upper bound or there is mold risk and outdoor air is clearly drier. An open window ends the hint.",
-  "mold.room_ventilation_requires": "Needs a humidity sensor (under Sensors).",
+  "mold.room_ventilation_requires": "Needs a humidity sensor and a window sensor (under Sensors).",
   "mold.room_ventilation_upper": "Recommend airing from",
   "dehumidifier.requires": "Select a dehumidifier under Devices and a humidity sensor first.",
   "card.dehumidifier_active": "Dehumidifier on · down to {value}%",

@@ -583,7 +583,7 @@
   "mold.room_heating_hint": "Augmente la température en cas de risque de moisissure. Utilise l’intensité des paramètres, où la prévention doit être activée.",
   "mold.room_ventilation_title": "Conseil d’aération",
   "mold.room_ventilation_hint": "Recommander d’aérer quand l’humidité atteint la limite haute ou en cas de risque de moisissure, et que l’air extérieur est nettement plus sec. Une fenêtre ouverte met fin au conseil.",
-  "mold.room_ventilation_requires": "Nécessite un capteur d’humidité (sous Capteurs).",
+  "mold.room_ventilation_requires": "Nécessite un capteur d’humidité et un capteur de fenêtre (sous Capteurs).",
   "mold.room_ventilation_upper": "Conseiller d’aérer dès",
   "dehumidifier.requires": "Sélectionnez d’abord un déshumidificateur dans Appareils et un capteur d’humidité.",
   "card.dehumidifier_active": "Déshumidificateur actif · jusqu’à {value}%",

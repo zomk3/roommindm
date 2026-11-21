@@ -18,6 +18,8 @@ export class RsMoldProtection extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public editing = false;
   @property({ type: String }) public humiditySensor = "";
+  /** The airing hint needs one: without it RoomMind cannot see the airing it asks for. */
+  @property({ type: Boolean }) public hasWindowSensor = false;
   @property({ type: String }) public dehumidifierEntity = "";
   @property({ type: Boolean }) public dehumidifierEnabled = false;
   @property({ type: Number }) public dehumidifierLower = 50;
@@ -98,6 +100,7 @@ export class RsMoldProtection extends LitElement {
 
   private _renderEdit(l: string) {
     const dehumidifierReady = !!this.dehumidifierEntity && !!this.humiditySensor;
+    const ventilationReady = !!this.humiditySensor && this.hasWindowSensor;
     return html`
       <rs-list-row
         switch
@@ -117,11 +120,11 @@ export class RsMoldProtection extends LitElement {
         icon="mdi:window-open-variant"
         .heading=${localize("mold.room_ventilation_title", l)}
         .secondary=${localize(
-          this.humiditySensor ? "mold.room_ventilation_hint" : "mold.room_ventilation_requires",
+          ventilationReady ? "mold.room_ventilation_hint" : "mold.room_ventilation_requires",
           l,
         )}
-        .checked=${this.ventilationHintEnabled && !!this.humiditySensor}
-        .disabled=${!this.humiditySensor}
+        .checked=${this.ventilationHintEnabled && ventilationReady}
+        .disabled=${!ventilationReady}
         @toggle-changed=${(e: CustomEvent<boolean>) => {
           e.stopPropagation();
           this._fire("ventilation_hint_enabled", e.detail);

@@ -259,7 +259,7 @@ Restart Home Assistant after the update, then reload the browser tab. If it stil
 
 - **Home Assistant** 2026.5 or newer
 - At least one Home Assistant area with a `climate.*` entity
-- Optional: temperature, humidity, window, occupancy and CO₂/VOC sensors, weather entity, electricity price sensor, person entities, outdoor humidity sensor (airing hint), dehumidifier with tank-full sensor
+- Optional: temperature, humidity, window, occupancy and CO₂/VOC sensors, weather entity, electricity price sensor, person entities, outdoor humidity and window sensor (airing hint), dehumidifier with tank-full sensor
 
 No cloud services, no account: everything runs locally.
 

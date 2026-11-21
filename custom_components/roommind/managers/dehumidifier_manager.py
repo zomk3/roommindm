@@ -13,9 +13,9 @@ dehumidifier is enabled:
 6. The switch happens once its condition has held for the switching delay, and
    never before the compressor's minimum run / pause time.
 
-The airing hint does not need a dehumidifier: every room with a humidity reading and the
-hint enabled (per room, on by default) gets it while it needs drying (above its upper bound or at mold risk), its window is closed and
-outdoor air holds clearly less water. It runs before the control steps, also while
+The airing hint does not need a dehumidifier: every room with a humidity reading, a window
+sensor and the hint enabled (per room, on by default) gets it while it needs drying (above its
+upper bound or at mold risk), its window is closed and outdoor air holds clearly less water. It runs before the control steps, also while
 climate control is off (advice only, no commands).
 """
 
@@ -444,12 +444,14 @@ class DehumidifierManager:
     ) -> None:
         """Recommend airing while the room needs drying and outdoor air holds clearly less water.
 
-        Any room with a humidity reading and the hint enabled, with or without a dehumidifier. A window sensor is
-        optional: while it reports the window open the room is being aired already.
+        Any room with a humidity reading, a window sensor and the hint enabled, with or without a dehumidifier.
+        The window sensor is required: without it RoomMind cannot see the airing it asks for, so the hint
+        would only repeat. While it reports the window open the room is being aired already.
         """
         if (
             room.get("is_outdoor", False)
             or not room.get("ventilation_hint_enabled", True)
+            or not room.get("window_sensors")
             or window_open
             or temperature is None
             or humidity is None

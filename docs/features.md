@@ -153,10 +153,11 @@ More behaviour per room:
   after Home Assistant starts), RoomMind leaves the dehumidifier as it is, for up to 5 minutes; a
   running device keeps running.
 
-**Airing hint** - every room with a humidity sensor, with or without a dehumidifier, gets "air the
-room" while its humidity is at or above its upper bound (default 60 %) or there is mold risk, and
-outdoor air (outdoor temperature and humidity sensor) holds at least 2 g/m³ less water than the
-room. A window sensor is optional: while it reports the window open, the hint ends. Each room
+**Airing hint** - every room with a humidity sensor and a window sensor, with or without a
+dehumidifier, gets "air the room" while its humidity is at or above its upper bound (default 60 %)
+or there is mold risk, and outdoor air (outdoor temperature and humidity sensor) holds at least
+2 g/m³ less water than the room. The window sensor is required: without it RoomMind cannot see the
+airing it asks for. While it reports the window open, the hint ends. Each room
 switches the hint on or off, and sets the bound, in its **Mold protection** card (on by default).
 The hint is advice only and also shows while climate control is off.
 

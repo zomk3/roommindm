@@ -835,6 +835,7 @@ export class RsRoomDetail extends LitElement {
       .hass=${this.hass}
       .editing=${editing}
       .humiditySensor=${this._selectedHumiditySensor}
+      .hasWindowSensor=${this._selectedWindowSensors.size > 0}
       .dehumidifierEntity=${this._dehumidifierEntity}
       .dehumidifierEnabled=${this._dehumidifierEnabled}
       .dehumidifierLower=${this._dehumidifierLower}

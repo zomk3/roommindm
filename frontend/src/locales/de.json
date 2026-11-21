@@ -583,7 +583,7 @@
   "mold.room_heating_hint": "Temperatur bei Schimmelrisiko erhöhen. Nutzt die Intensität aus den Einstellungen, dort muss die Schimmelprävention aktiv sein.",
   "mold.room_ventilation_title": "Lüftungshinweis",
   "mold.room_ventilation_hint": "Lüften empfehlen, wenn die Feuchte die obere Grenze erreicht oder Schimmelrisiko besteht und die Außenluft deutlich trockener ist. Ein offenes Fenster beendet den Hinweis.",
-  "mold.room_ventilation_requires": "Braucht einen Feuchtesensor (unter Sensoren).",
+  "mold.room_ventilation_requires": "Braucht einen Feuchtesensor und einen Fenstersensor (unter Sensoren).",
   "mold.room_ventilation_upper": "Lüften empfehlen ab",
   "dehumidifier.requires": "Zuerst unter Geräte einen Luftentfeuchter und einen Feuchtigkeitssensor wählen.",
   "card.dehumidifier_active": "Entfeuchter aktiv · bis {value}%",
