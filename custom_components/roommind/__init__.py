@@ -151,6 +151,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: RoomMindConfigEntry) ->
     unload_ok: bool = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         await _async_release_all_valves(hass)
+        if (coordinator := getattr(entry, "runtime_data", None)) is not None:
+            coordinator.cancel_master_delay_timers()
         # Single config entry: nothing is left to show in the sidebar or on dashboards
         _async_unregister_frontend(hass)
     return unload_ok

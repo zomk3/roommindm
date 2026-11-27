@@ -7,6 +7,7 @@ minimum run and off times across all indoor units sharing a compressor.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from time import monotonic
 
@@ -14,9 +15,18 @@ from ..const import (
     DEFAULT_COMPRESSOR_MIN_OFF_MINUTES,
     DEFAULT_COMPRESSOR_MIN_RUN_MINUTES,
     DEFAULT_CONFLICT_RESOLUTION,
+    MASTER_OFF_MODE_OFF,
+    UNIFORM_SWITCH_MAX_WAIT_S,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# hvac modes an indoor unit must not hold while the shared outdoor unit runs the given way (#533):
+# heating takes the whole circuit, cooling shares it with dry and fan (Daikin, Pioneer, Panasonic manuals).
+UNIFORM_MODE_CONFLICTS: dict[str, frozenset[str]] = {
+    "heat": frozenset({"cool", "dry", "fan_only"}),
+    "cool": frozenset({"heat"}),
+}
 
 
 @dataclass
@@ -32,6 +42,20 @@ class CompressorGroupConfig:
     conflict_resolution: str = "heating_priority"
     action_script: str = ""
     enforce_uniform_mode: bool = False
+    # The master runs only while at least this many member rooms want its action
+    min_rooms: int = 1
+    # A wanted switch must hold this long before the master follows: on (start delay), off (run-on)
+    start_delay_seconds: float = 0.0
+    run_on_seconds: float = 0.0
+    # Climate master only: setpoint when heating, setpoint when off, and whether off keeps its heat mode
+    on_temperature: float | None = None
+    off_temperature: float | None = None
+    off_mode: str = MASTER_OFF_MODE_OFF
+
+    @property
+    def master_domain(self) -> str:
+        """Domain of the master entity ("" without one)."""
+        return self.master_entity.split(".", 1)[0] if self.master_entity else ""
 
 
 @dataclass
@@ -42,9 +66,25 @@ class CompressorGroupState:
     compressor_on_since: float | None = None
     compressor_off_since: float | None = None
     master_action: str | None = None
+    # What the members' rooms ask for, before the master guard and command (#533)
+    desired_action: str | None = None
+    # The way the outdoor unit last ran or was wanted to: units resting in it may restart any time
+    last_mode_action: str | None = None
+    # A switch to this action waiting for members in the other mode, since (monotonic)
+    switch_wait_action: str | None = None
+    switch_wait_since: float | None = None
+    # Members the group stopped waiting for, with the mode they kept (a unit RoomMind may not touch)
+    switch_ignored: dict[str, str] = field(default_factory=dict)
+    # Uniform-mode group whose master can't be read: its applied mode is not trusted meanwhile
+    master_unreadable: bool = False
     master_on_since: float | None = None
     master_off_since: float | None = None
     member_started_at: dict[str, float] = field(default_factory=dict)
+    # The last heat or cool the master was really sent (in memory, None after a restart)
+    master_last_active: str | None = None
+    # Start delay / run-on: the action the rooms want, and since when (monotonic)
+    delay_wanted: str | None = None
+    delay_wanted_since: float | None = None
 
 
 class CompressorGroupManager:
@@ -71,6 +111,12 @@ class CompressorGroupManager:
                 conflict_resolution=g.get("conflict_resolution", DEFAULT_CONFLICT_RESOLUTION),
                 action_script=g.get("action_script", ""),
                 enforce_uniform_mode=g.get("enforce_uniform_mode", False),
+                min_rooms=max(1, int(g.get("min_rooms", 1) or 1)),
+                start_delay_seconds=float(g.get("start_delay_seconds", 0) or 0),
+                run_on_seconds=float(g.get("run_on_seconds", 0) or 0),
+                on_temperature=g.get("on_temperature"),
+                off_temperature=g.get("off_temperature"),
+                off_mode=g.get("off_mode", MASTER_OFF_MODE_OFF) or MASTER_OFF_MODE_OFF,
             )
             for eid in g.get("members", []):
                 new_entity_map[eid] = gid
@@ -207,7 +253,162 @@ class CompressorGroupManager:
         if group is None or not group.enforce_uniform_mode:
             return None
         state = self._states.get(gid)
-        return state.master_action if state else None
+        if state is None or state.master_unreadable:
+            return None
+        return state.master_action
+
+    def is_uniform(self, entity_id: str) -> bool:
+        """Whether the entity belongs to a group with "All in the same mode"."""
+        gid = self._entity_to_group.get(entity_id)
+        group = self._groups.get(gid) if gid is not None else None
+        return group is not None and group.enforce_uniform_mode
+
+    def group_mode(self, entity_id: str, *, resting: bool = True) -> str | None:
+        """The way a uniform-mode group runs or turns to (heat/cool), None without one (#533)."""
+        gid = self._entity_to_group.get(entity_id)
+        group = self._groups.get(gid) if gid is not None else None
+        state = self._states.get(gid) if gid is not None else None
+        if group is None or state is None or not group.enforce_uniform_mode:
+            return None
+        applied = None if state.master_unreadable else state.master_action
+        for action in (state.desired_action, applied, state.last_mode_action if resting else None):
+            if action in UNIFORM_MODE_CONFLICTS:
+                return action
+        return None
+
+    def managed_mode(self, entity_id: str) -> str | None:
+        """What a Managed auto room's unit runs in a uniform-mode group (#533).
+
+        The applied mode once the group runs; "off" while it turns to the other way (no direct
+        reversal next to an outdoor unit still in the old mode); None while the group is idle,
+        so the room keeps its own way (heat_cool or by the unit's reading).
+        """
+        gid = self._entity_to_group.get(entity_id)
+        group = self._groups.get(gid) if gid is not None else None
+        state = self._states.get(gid) if gid is not None else None
+        if group is None or state is None or not group.enforce_uniform_mode:
+            return None
+        applied = state.master_action if not state.master_unreadable else None
+        applied = applied if applied in UNIFORM_MODE_CONFLICTS else None
+        desired = state.desired_action if state.desired_action in UNIFORM_MODE_CONFLICTS else None
+        if desired is not None and desired != applied:
+            return "off"
+        return applied
+
+    def conflicting_modes(self, entity_id: str, *, resting: bool = True) -> frozenset[str]:
+        """hvac modes a member must not hold while its uniform-mode group runs or turns the other way (#533).
+
+        The wanted action counts before the applied one: a master that refuses the switch while
+        a unit still sits in the old mode, or waits out its min off, must not keep that unit there.
+        For units at rest (``resting``) an idle group keeps the way it last ran, since its units
+        resting in that mode may start again; a room that wants to run is judged without it.
+        """
+        return UNIFORM_MODE_CONFLICTS.get(self.group_mode(entity_id, resting=resting) or "", frozenset())
+
+    def switch_wait_over(self, group_id: str, action: str) -> bool:
+        """Whether a switch to ``action`` has waited long enough for members in the other mode (#533)."""
+        state = self._states.get(group_id)
+        group = self._groups.get(group_id)
+        if state is None or group is None:
+            return True
+        if state.switch_wait_action != action or state.switch_wait_since is None:
+            state.switch_wait_action = action
+            state.switch_wait_since = monotonic()
+        return monotonic() - state.switch_wait_since >= UNIFORM_SWITCH_MAX_WAIT_S
+
+    def clear_switch_wait(self, group_id: str) -> None:
+        """No member in the other mode any more: a later switch waits afresh."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.switch_wait_action = None
+            state.switch_wait_since = None
+
+    def note_master_readable(self, group_id: str, readable: bool) -> None:
+        """A master that can't be read: no stale wish, and a uniform-mode group follows its members.
+
+        The applied action and its min run/off timers stay, so the master guard holds on its return.
+        """
+        state = self._states.get(group_id)
+        group = self._groups.get(group_id)
+        if state is None or group is None:
+            return
+        if not readable:
+            state.desired_action = None
+            # A start delay or run-on counts only while the master can follow it
+            self.clear_delay(group_id)
+        state.master_unreadable = not readable and group.enforce_uniform_mode
+
+    def seed_last_mode(self, group_id: str, action: str) -> None:
+        """After a restart: the way the group ran before, read from its devices."""
+        state = self._states.get(group_id)
+        if state is not None and state.last_mode_action is None and action in UNIFORM_MODE_CONFLICTS:
+            state.last_mode_action = action
+
+    def delayed_action(self, group_id: str, wanted: str) -> tuple[str, float]:
+        """Apply the group's start delay and run-on to the action the rooms want.
+
+        Returns the action the master follows now and the seconds until a held-back
+        switch is due (0 when none waits). A switch to an active action waits the start
+        delay, a switch to idle the run-on; a wish that returns to the applied action
+        within the wait switches nothing. Without a known applied action (startup) the
+        wish applies at once.
+        """
+        group = self._groups.get(group_id)
+        state = self._states.get(group_id)
+        if group is None or state is None:
+            return wanted, 0.0
+        now = monotonic()
+        if wanted != state.delay_wanted:
+            state.delay_wanted = wanted
+            state.delay_wanted_since = now
+        applied = state.master_action
+        if applied is None or wanted == applied:
+            return wanted, 0.0
+        delay = group.run_on_seconds if wanted == "idle" else group.start_delay_seconds
+        since = state.delay_wanted_since if state.delay_wanted_since is not None else now
+        left = delay - (now - since)
+        if left <= 0:
+            return wanted, 0.0
+        return applied, left
+
+    def supply_withheld(self, entity_ids: Iterable[str], action: str) -> bool:
+        """Whether rooms needed or a start delay keeps the master from *action* for all these units.
+
+        Only groups using those options count: when every unit that should bring the room heat or
+        cooling waits for such a master, the room gets none of it.
+        """
+        eids = list(entity_ids)
+        for eid in eids:
+            gid = self._entity_to_group.get(eid)
+            group = self._groups.get(gid) if gid is not None else None
+            state = self._states.get(gid) if gid is not None else None
+            if group is None or state is None or not (group.master_entity or group.action_script):
+                return False
+            if group.min_rooms <= 1 and group.start_delay_seconds <= 0:
+                return False
+            # Not judged this cycle (startup, master unreadable, climate control off): unknown
+            if state.desired_action is None or state.master_action is None or state.master_action == action:
+                return False
+        return bool(eids)
+
+    def clear_delay(self, group_id: str) -> None:
+        """Forget a pending start delay or run-on: a wish after a pause waits afresh."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.delay_wanted = None
+            state.delay_wanted_since = None
+
+    def delay_pending(self, group_id: str) -> tuple[str, float] | None:
+        """The switch a start delay or run-on holds back and its seconds left, else None."""
+        group = self._groups.get(group_id)
+        state = self._states.get(group_id)
+        if group is None or state is None or state.delay_wanted is None or state.delay_wanted_since is None:
+            return None
+        if state.master_action is None or state.delay_wanted == state.master_action:
+            return None
+        delay = group.run_on_seconds if state.delay_wanted == "idle" else group.start_delay_seconds
+        left = delay - (monotonic() - state.delay_wanted_since)
+        return (state.delay_wanted, left) if left > 0 else None
 
     def check_master_can_switch(self, group_id: str, new_action: str) -> bool:
         """Check if the master device is allowed to switch to *new_action*.
@@ -241,6 +442,14 @@ class CompressorGroupManager:
 
         return True
 
+    def set_desired_action(self, group_id: str, action: str | None) -> None:
+        """Record the action the member rooms ask for this cycle, whether or not the master follows yet."""
+        state = self._states.get(group_id)
+        if state is not None:
+            state.desired_action = action
+            if action in UNIFORM_MODE_CONFLICTS:
+                state.last_mode_action = action
+
     def set_master_action(self, group_id: str, action: str) -> None:
         """Record the master entity's resolved action after commands are sent."""
         state = self._states.get(group_id)
@@ -248,6 +457,12 @@ class CompressorGroupManager:
             return
         prev = state.master_action
         state.master_action = action
+        if action != prev:
+            state.switch_wait_action = None
+            state.switch_wait_since = None
+        if action in UNIFORM_MODE_CONFLICTS:
+            state.last_mode_action = action
+            state.master_last_active = action
         if action != "idle" and (prev is None or prev == "idle"):
             state.master_on_since = monotonic()
             state.master_off_since = None
@@ -261,13 +476,19 @@ def resolve_master_action(
     conflict_resolution: str,
     outdoor_temp: float | None,
     outdoor_heating_max: float,
+    min_rooms: int = 1,
 ) -> str:
     """Determine master entity action from aggregate room modes.
 
+    A side counts only when at least *min_rooms* rooms want it.
     Returns "heat", "cool", or "idle".
     """
     n_heating = sum(1 for m in room_modes if m == "heating")
     n_cooling = sum(1 for m in room_modes if m == "cooling")
+    if n_heating < min_rooms:
+        n_heating = 0
+    if n_cooling < min_rooms:
+        n_cooling = 0
 
     if n_heating == 0 and n_cooling == 0:
         return "idle"

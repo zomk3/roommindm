@@ -43,6 +43,12 @@ def dew_point(temp: float, rh: float) -> float:
     return (_B * gamma) / (_A - gamma)
 
 
+def absolute_humidity(temp: float, rh: float) -> float:
+    """Water vapour in the air in g/m³ (Magnus saturation pressure, ideal gas)."""
+    e_sat = 6.112 * math.exp((_A * temp) / (_B + temp))
+    return 216.7 * (max(0.0, min(rh, 100.0)) / 100.0) * e_sat / (273.15 + temp)
+
+
 def surface_rh(t_dew: float, t_surface: float) -> float:
     """Calculate relative humidity at a surface.
 
@@ -136,13 +142,3 @@ def mold_prevention_delta(intensity: str) -> float:
         Temperature increase in °C.
     """
     return MOLD_PREVENTION_DELTAS.get(intensity, 2.0)
-
-
-def absolute_humidity(temp: float, rh: float) -> float:
-    """Water content of air in g/m³ from temperature (°C) and relative humidity (%).
-
-    Magnus saturation pressure (6.112 hPa at 0 °C, same constants as dew_point) times
-    RH, converted with the ideal gas law for water vapour (2.1674 = 100 / R_v·1000).
-    """
-    e_sat = 6.112 * math.exp((_A * temp) / (_B + temp))
-    return e_sat * max(0.0, min(rh, 100.0)) * 2.1674 / (273.15 + temp)

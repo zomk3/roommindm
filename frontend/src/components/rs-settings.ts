@@ -15,6 +15,7 @@ import type {
   CompressorGroup,
   RoomWithoutArea,
   PriceStatus,
+  PresenceAwayAction,
 } from "../types";
 import { localize } from "../utils/localize";
 import { errorText } from "../utils/errors";
@@ -22,7 +23,8 @@ import { fireSaveStatus } from "../utils/events";
 import { VACATION_SENTINEL } from "../utils/constants";
 import { formatMinutes, formatNumber, formatPercent } from "../utils/format";
 import { learningRoomIds } from "../utils/learning";
-import { formatTempLocale, tempUnit, toDisplayDelta } from "../utils/temperature";
+import { moldDeltaText } from "../utils/mold";
+import { formatTempLocale, tempUnit } from "../utils/temperature";
 import { describePriceStatus } from "../utils/price-status";
 import { fanModeLabel, type FanModeOption } from "../utils/device-utils";
 import { tokens, alertStyles } from "../styles/tokens";
@@ -129,6 +131,7 @@ const SETTINGS: [keyof GlobalSettings, SettingSync][] = [
   ],
   ["presence_away_action", plain("presenceAwayAction", "eco")],
   ["presence_clears_override", plain("presenceClearsOverride", false)],
+  ["presence_ends_override", plain("presenceEndsOverride", false)],
   ["schedule_off_action", plain("scheduleOffAction", "eco")],
   ["valve_protection_enabled", plain("valveProtectionEnabled", false)],
   ["valve_protection_interval_days", plain("valveProtectionInterval", 7)],
@@ -224,8 +227,9 @@ export class RsSettings extends LitElement {
   @state() private _vacationUntil = "";
   @state() private _presenceEnabled = false;
   @state() private _presencePersons: string[] = [];
-  @state() private _presenceAwayAction: "eco" | "off" = "eco";
+  @state() private _presenceAwayAction: PresenceAwayAction = "eco";
   @state() private _presenceClearsOverride = false;
+  @state() private _presenceEndsOverride = false;
   @state() private _scheduleOffAction: "eco" | "off" = "eco";
   @state() private _valveProtectionEnabled = false;
   @state() private _valveProtectionInterval = 7;
@@ -531,6 +535,7 @@ export class RsSettings extends LitElement {
           .presencePersons=${this._presencePersons}
           .presenceAwayAction=${this._presenceAwayAction}
           .presenceClearsOverride=${this._presenceClearsOverride}
+          .presenceEndsOverride=${this._presenceEndsOverride}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-presence>`;
       case "vacation":
@@ -672,7 +677,9 @@ export class RsSettings extends LitElement {
         const action = localize(
           this._presenceAwayAction === "off"
             ? "settings.summary.away_off"
-            : "settings.summary.away_eco",
+            : this._presenceAwayAction === "away"
+              ? "settings.summary.away_away"
+              : "settings.summary.away_eco",
           l,
         );
         const key =
@@ -759,10 +766,9 @@ export class RsSettings extends LitElement {
           );
         }
         if (this._moldPreventionEnabled) {
-          const k = { light: 1, medium: 2, strong: 3 }[this._moldPreventionIntensity] ?? 2;
           parts.push(
             localize("settings.summary.mold_prevent", l, {
-              delta: `${formatNumber(toDisplayDelta(k, this.hass), this.hass, 0, 1)}\u00a0${tempUnit(this.hass)}`,
+              delta: `${moldDeltaText(this._moldPreventionIntensity, this.hass)}\u00a0${tempUnit(this.hass)}`,
             }),
           );
         }

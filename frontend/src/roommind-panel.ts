@@ -6,6 +6,7 @@ import type {
   RoomConfig,
   RoomWithoutArea,
   ScheduleChoice,
+  PresenceAwayAction,
 } from "./types";
 import { loadHaElements } from "./load-ha-elements";
 import { noteServerTime } from "./utils/server-clock";
@@ -88,12 +89,17 @@ export class RoomMindPanel extends LitElement {
   @state() private _coilDryMinutes = 20;
   @state() private _coilDryMode = "fan_only";
   @state() private _coilDryFanMode = "low";
+  @state() private _moldDetectionEnabled = false;
+  @state() private _moldPreventionEnabled = false;
+  @state() private _moldPreventionIntensity = "medium";
   @state() private _anyoneHome = true;
   @state() private _presencePersons: string[] = [];
-  @state() private _presenceAwayAction: "eco" | "off" = "eco";
+  @state() private _presenceAwayAction: PresenceAwayAction = "eco";
   @state() private _saveStatus: "idle" | "saving" | "saved" | "error" = "idle";
   @state() private _roomOrder: string[] = [];
   @state() private _groupByFloor = false;
+  @state() private _floorOrder: string[] = [];
+  @state() private _haFloorOrder: string[] = [];
   @state() private _editing = false;
   @state() private _elementsLoaded = false;
   @state() private _settingsCategory = "";
@@ -556,6 +562,9 @@ export class RoomMindPanel extends LitElement {
             .outdoorTemp=${this._outdoorTemp}
             .vacationActive=${this._vacationActive}
             .vacationUntil=${this._vacationUntil}
+            .moldDetectionEnabled=${this._moldDetectionEnabled}
+            .moldPreventionEnabled=${this._moldPreventionEnabled}
+            .moldPreventionIntensityGlobal=${this._moldPreventionIntensity}
             @room-updated=${this._onRoomUpdated}
             @room-deleted=${this._onRoomDeleted}
             @open-analytics=${this._onGoToAnalytics}
@@ -572,6 +581,7 @@ export class RoomMindPanel extends LitElement {
       infos: this._areaInfosCache,
       hiddenRooms: this._hiddenRooms,
       groupByFloor: this._groupByFloor,
+      floorOrder: { ha: this._haFloorOrder, own: this._floorOrder },
       controlMode: this._controlMode,
       climateControlActive: this._climateControlActive,
     };
@@ -581,11 +591,13 @@ export class RoomMindPanel extends LitElement {
         .infos=${common.infos}
         .hiddenRooms=${common.hiddenRooms}
         .groupByFloor=${common.groupByFloor}
+        .floorOrder=${common.floorOrder}
         .controlMode=${common.controlMode}
         .climateControlActive=${common.climateControlActive}
         @room-order-changed=${this._onRoomOrderChanged}
         @room-hidden-changed=${this._onRoomHiddenChanged}
         @group-by-floor-changed=${this._onGroupByFloorChanged}
+        @floor-order-changed=${this._onFloorOrderChanged}
         @area-selected=${this._onAreaSelected}
       ></rs-dashboard-edit>`;
     }
@@ -603,6 +615,7 @@ export class RoomMindPanel extends LitElement {
       .infos=${common.infos}
       .hiddenRooms=${common.hiddenRooms}
       .groupByFloor=${common.groupByFloor}
+      .floorOrder=${common.floorOrder}
       .controlMode=${common.controlMode}
       .climateControlActive=${common.climateControlActive}
       .summary=${summary}
@@ -686,6 +699,8 @@ export class RoomMindPanel extends LitElement {
         hidden_rooms: string[];
         room_order: string[];
         group_by_floor: boolean;
+        floor_order?: string[];
+        ha_floor_order?: string[];
         control_mode: "mpc" | "bangbang";
         climate_control_active: boolean;
         presence_enabled: boolean;
@@ -693,7 +708,7 @@ export class RoomMindPanel extends LitElement {
         price_status?: PriceStatus | null;
         anyone_home: boolean;
         presence_persons: string[];
-        presence_away_action: "eco" | "off";
+        presence_away_action: PresenceAwayAction;
         schedule_off_action: "eco" | "off";
         valve_protection_enabled: boolean;
         coil_dry_enabled: boolean;
@@ -701,6 +716,9 @@ export class RoomMindPanel extends LitElement {
         coil_dry_mode: string;
         coil_dry_fan_mode: string;
         server_time?: number;
+        mold_detection_enabled: boolean;
+        mold_prevention_enabled: boolean;
+        mold_prevention_intensity: string;
       }>({
         type: "roommind/rooms/list",
       });
@@ -718,7 +736,9 @@ export class RoomMindPanel extends LitElement {
         this._hiddenRooms = result.hidden_rooms ?? [];
         this._roomOrder = result.room_order ?? [];
         this._groupByFloor = result.group_by_floor ?? false;
+        this._floorOrder = result.floor_order ?? [];
       }
+      this._haFloorOrder = result.ha_floor_order ?? [];
       this._outdoorTemp = result.outdoor_temp ?? null;
       this._controlMode = result.control_mode ?? "mpc";
       this._climateControlActive = result.climate_control_active ?? true;
@@ -730,6 +750,9 @@ export class RoomMindPanel extends LitElement {
       this._coilDryMinutes = result.coil_dry_minutes ?? 20;
       this._coilDryMode = result.coil_dry_mode ?? "fan_only";
       this._coilDryFanMode = result.coil_dry_fan_mode ?? "low";
+      this._moldDetectionEnabled = result.mold_detection_enabled ?? false;
+      this._moldPreventionEnabled = result.mold_prevention_enabled ?? false;
+      this._moldPreventionIntensity = result.mold_prevention_intensity ?? "medium";
       this._anyoneHome = result.anyone_home ?? true;
       this._presencePersons = result.presence_persons ?? [];
       this._presenceAwayAction = result.presence_away_action ?? "eco";
@@ -898,6 +921,14 @@ export class RoomMindPanel extends LitElement {
     this._groupByFloor = e.detail.value;
     this._saveLayout({ group_by_floor: e.detail.value }, () => {
       this._groupByFloor = previous;
+    });
+  }
+
+  private _onFloorOrderChanged(e: CustomEvent<{ order: string[] }>) {
+    const previous = this._floorOrder;
+    this._floorOrder = e.detail.order;
+    this._saveLayout({ floor_order: e.detail.order }, () => {
+      this._floorOrder = previous;
     });
   }
 

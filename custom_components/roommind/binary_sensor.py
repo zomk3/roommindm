@@ -5,12 +5,13 @@ from __future__ import annotations
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import RoomMindConfigEntry, RoomMindCoordinator, _get_area_name, has_air_quality_sensor
 from .store import get_store
-from .utils.area_utils import rooms_with_area
+from .utils.area_utils import assign_area_once, rooms_with_area
 
 # Coordinator entities: updates come from the coordinator, commands need no limit
 PARALLEL_UPDATES = 0
@@ -80,10 +81,23 @@ class RoomMindAirQualitySensor(CoordinatorEntity, BinarySensorEntity):
         self._area_id = area_id
         self._attr_unique_id = f"{DOMAIN}_{area_id}_air_quality"
         self.entity_id = f"binary_sensor.{DOMAIN}_{area_id}_air_quality"
-        room = get_store(coordinator.hass).get_room(area_id) or {}
-        self._attr_translation_placeholders = {
-            "room": room.get("display_name") or _get_area_name(coordinator.hass, area_id)
-        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        assign_area_once(self.hass, self.entity_id, self._area_id, DOMAIN)
+
+    @property
+    def translation_placeholders(self) -> dict[str, str]:
+        room = get_store(self.coordinator.hass).get_room(self._area_id) or {}
+        return {"room": room.get("display_name") or _get_area_name(self.coordinator.hass, self._area_id)}
+
+    @property
+    def name(self) -> str | UndefinedType | None:
+        # HA caches the name; built on every write so a renamed room shows without a restart
+        platform_data = getattr(self, "platform_data", None)
+        if platform_data is None:
+            return UNDEFINED
+        return self._name_internal(None, platform_data.platform_translations)
 
     def _live(self) -> dict:
         live: dict = ((self.coordinator.data or {}).get("rooms") or {}).get(self._area_id) or {}

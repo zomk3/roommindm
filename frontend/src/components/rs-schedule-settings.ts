@@ -1,6 +1,12 @@
 import { html, css, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { ScheduleEntry, ClimateMode, ScheduleTempWarning } from "../types";
+import type {
+  ScheduleEntry,
+  ClimateMode,
+  OverrideDurationMode,
+  ScheduleTempWarning,
+  PresenceAwayAction,
+} from "../types";
 import { localize } from "../utils/localize";
 import {
   formatTempLocale,
@@ -10,7 +16,7 @@ import {
   MAX_TARGET_TEMP_C,
   tempRange,
 } from "../utils/temperature";
-import { formatNumber } from "../utils/format";
+import { formatMinutes, formatNumber } from "../utils/format";
 import { RsScheduleBase } from "./shared/rs-schedule-base";
 import { inputStyles } from "../styles/input-styles";
 import { priceShiftLabel } from "./room-detail/rs-price-shift";
@@ -44,7 +50,7 @@ const PREHEAT_KEYS = {
 } as const;
 
 /** Which dialog a row of the card opens (`edit-click` detail `{ part }`). */
-export type ScheduleCardPart = "schedule" | "temperatures" | "price";
+export type ScheduleCardPart = "schedule" | "temperatures" | "price" | "manual";
 
 /**
  * The room's "Schedule & temperatures" card. View mode: one row per schedule, comfort, eco,
@@ -79,13 +85,19 @@ export class RsScheduleSettings extends RsScheduleBase {
   /** Which lead the pre-heat switch controls here ("" hides it). */
   @property({ type: String }) public preheatSides: "" | "heat" | "cool" | "both" = "";
   @property({ type: Boolean }) public followDeviceSetpoint = false;
+  /** How long a target set on the room climate entity holds (per room). */
+  @property({ type: String }) public overrideDurationMode: OverrideDurationMode = "schedule";
+  @property({ type: Number }) public overrideDurationMinutes = 120;
   /** K the schedule target may move with the electricity price (0 = off). */
   @property({ type: Number }) public priceShift = 0;
   /** A price source is set in the settings; without one the option is hidden. */
   @property({ type: Boolean }) public priceConfigured = false;
   /** What the room does while its schedule is off / everybody is away (global settings). */
   @property({ type: String }) public scheduleOffAction: "eco" | "off" = "eco";
-  @property({ type: String }) public presenceAwayAction: "eco" | "off" = "eco";
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
+  /** Away levels (presence_away_action "away"); null = eco. */
+  @property({ attribute: false }) public awayHeat: number | null = null;
+  @property({ attribute: false }) public awayCool: number | null = null;
   /** Presence detection applies to this room (on globally, persons to watch, not ignored). */
   @property({ type: Boolean }) public presenceActive = false;
   /** An empty room drops to eco (occupancy eco with sensors). */
@@ -269,6 +281,24 @@ export class RsScheduleSettings extends RsScheduleBase {
         @row-click=${open("temperatures")}
       ></rs-list-row>
       ${
+        this.presenceAwayAction === "away"
+          ? html`<rs-list-row
+              clickable
+              chevron
+              icon="mdi:home-export-outline"
+              .heading=${localize("override.away", l)}
+              .secondary=${localize(
+                this.presenceActive
+                  ? "detail.schedule.away_sub"
+                  : "detail.schedule.away_sub_inactive",
+                l,
+              )}
+              .value=${band(this.awayHeat ?? this.ecoHeat, this.awayCool ?? this.ecoCool)}
+              @row-click=${open("temperatures")}
+            ></rs-list-row>`
+          : nothing
+      }
+      ${
         this.preheatSides
           ? html`<rs-list-row
               switch
@@ -292,12 +322,7 @@ export class RsScheduleSettings extends RsScheduleBase {
         wrap
         icon="mdi:gesture-tap"
         .heading=${localize("schedule.follow_device_setpoint_label", l)}
-        .secondary=${localize(
-          this.schedules.length
-            ? "detail.schedule.follow_sub"
-            : "detail.schedule.follow_sub_no_schedule",
-          l,
-        )}
+        .secondary=${this._followSubText(l)}
         .checked=${this.followDeviceSetpoint}
         @toggle-changed=${(e: CustomEvent<boolean>) =>
           this._fireValue("follow-device-setpoint-changed", e.detail)}
@@ -307,6 +332,15 @@ export class RsScheduleSettings extends RsScheduleBase {
           .text=${localize("schedule.follow_device_setpoint_hint", l)}
         ></rs-info-icon>
       </rs-list-row>
+      <rs-list-row
+        clickable
+        chevron
+        icon="mdi:hand-back-right-outline"
+        .heading=${localize("schedule.manual_title", l)}
+        .secondary=${localize("schedule.manual_duration_label", l)}
+        .value=${this._manualDurationText(l)}
+        @row-click=${open("manual")}
+      ></rs-list-row>
       ${
         this.priceConfigured
           ? html`<rs-list-row
@@ -363,13 +397,40 @@ export class RsScheduleSettings extends RsScheduleBase {
     if (this.schedules.length && this.scheduleOffAction === "eco") {
       when.push(localize("detail.schedule.when_schedule_off", l));
     }
-    if (this.presenceActive && this.presenceAwayAction === "eco") {
+    const awayIsEco =
+      this.presenceAwayAction === "eco" ||
+      (this.presenceAwayAction === "away" && this.awayHeat == null && this.awayCool == null);
+    if (this.presenceActive && awayIsEco) {
       when.push(localize("detail.schedule.when_away", l));
     }
     if (this.occupancyEco) when.push(localize("detail.schedule.when_empty", l));
     if (!when.length) return localize("detail.schedule.eco_sub_manual", l);
     const list = new Intl.ListFormat(l, { type: "disjunction" }).format(when);
     return localize("detail.schedule.eco_sub", l, { when: list });
+  }
+
+  private _followSubText(l: string): string {
+    if (this.overrideDurationMode === "minutes") {
+      return localize("detail.schedule.follow_sub_minutes", l, {
+        time: formatMinutes(this.overrideDurationMinutes, l),
+      });
+    }
+    return localize(
+      this.overrideDurationMode === "permanent" || this.schedules.length === 0
+        ? "detail.schedule.follow_sub_no_schedule"
+        : "detail.schedule.follow_sub",
+      l,
+    );
+  }
+
+  private _manualDurationText(l: string): string {
+    if (this.overrideDurationMode === "minutes") {
+      return formatMinutes(this.overrideDurationMinutes, l);
+    }
+    if (this.overrideDurationMode === "permanent" || this.schedules.length === 0) {
+      return localize("schedule.manual_duration_permanent", l);
+    }
+    return localize("schedule.manual_duration_schedule", l);
   }
 
   private _onEditClick(e: Event, part: ScheduleCardPart) {

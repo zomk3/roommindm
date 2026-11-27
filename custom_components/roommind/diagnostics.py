@@ -219,12 +219,27 @@ def _build_compressor_state(coordinator: Any) -> dict[str, Any]:
         if group_cfg and (group_cfg.master_entity or group_cfg.enforce_uniform_mode):
             entry["master_entity"] = group_cfg.master_entity
             entry["master_action"] = state.master_action
+            entry["desired_action"] = state.desired_action
+            entry["last_mode_action"] = state.last_mode_action
+            if state.switch_wait_action:
+                entry["switch_wait_action"] = state.switch_wait_action
             entry["conflict_resolution"] = group_cfg.conflict_resolution
             entry["enforce_uniform_mode"] = group_cfg.enforce_uniform_mode
             if group_cfg.action_script:
                 entry["action_script"] = group_cfg.action_script
             if state.master_on_since:
                 entry["master_on_for_s"] = round(now - state.master_on_since)
+            entry["min_rooms"] = group_cfg.min_rooms
+            if group_cfg.start_delay_seconds or group_cfg.run_on_seconds:
+                entry["start_delay_s"] = group_cfg.start_delay_seconds
+                entry["run_on_s"] = group_cfg.run_on_seconds
+                pending = cgm.delay_pending(gid)
+                if pending:
+                    entry["delay_pending"] = {"action": pending[0], "left_s": round(pending[1])}
+            if group_cfg.on_temperature is not None or group_cfg.off_temperature is not None:
+                entry["on_temperature"] = group_cfg.on_temperature
+                entry["off_temperature"] = group_cfg.off_temperature
+                entry["off_mode"] = group_cfg.off_mode
         groups[gid] = entry
     return groups
 

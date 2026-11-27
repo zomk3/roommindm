@@ -23,12 +23,22 @@ OVERRIDE_BOOST = "boost"
 OVERRIDE_ECO = "eco"
 OVERRIDE_CUSTOM = "custom"
 OVERRIDE_TYPES = [OVERRIDE_BOOST, OVERRIDE_ECO, OVERRIDE_CUSTOM]
+# How long a target set on the room climate entity or a thermostat holds (per room)
+OVERRIDE_DURATION_SCHEDULE = "schedule"
+OVERRIDE_DURATION_MINUTES = "minutes"
+OVERRIDE_DURATION_PERMANENT = "permanent"
+OVERRIDE_DURATION_MODES = [OVERRIDE_DURATION_SCHEDULE, OVERRIDE_DURATION_MINUTES, OVERRIDE_DURATION_PERMANENT]
+DEFAULT_OVERRIDE_DURATION_MINUTES = 120
+MIN_OVERRIDE_DURATION_MINUTES = 5
+MAX_OVERRIDE_DURATION_MINUTES = 1440
 # Grace period after the override entity is switched on before the seeded
 # override is evaluated; the caller's real targets normally arrive within it (#447).
 OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
+# "End" in presence_ends_override: the house must stay empty this long, a GPS flap does not end it
+PRESENCE_OVERRIDE_END_DELAY_S = 600
 # A hold "until the schedule changes" while the schedule cannot be read ends after this
 # (h, same as the dashboard card's fallback without a schedule) instead of never
-SCHEDULE_UNREADABLE_HOLD_HOURS = 4
+SCHEDULE_UNREADABLE_HOLD_HOURS = 6
 
 # Room modes
 MODE_IDLE = "idle"
@@ -77,6 +87,61 @@ AIR_QUALITY_CLEAR_FACTOR = 0.8
 VENTILATION_DOMAINS = ("fan", "switch", "input_boolean")
 VENTILATION_MIN_RUN_MINUTES = 15
 
+# Humidity limits per room in % RH (#518, #526): too humid from the upper limit on, fine again
+# HUMIDITY_HYSTERESIS below it; the lower limit mirrors that. 40-60 % is the usual comfort band
+DEFAULT_HUMIDITY_MAX = 60
+DEFAULT_HUMIDITY_MIN = 40
+MIN_HUMIDITY_MAX = 40
+MAX_HUMIDITY_MAX = 90
+MIN_HUMIDITY_MIN = 20
+MAX_HUMIDITY_MIN = 60
+HUMIDITY_HYSTERESIS = 5
+# Upper minus lower limit: the two release points never cross, so both devices never run at once
+HUMIDITY_LIMIT_GAP = 10
+HUMIDITY_DEVICE_DOMAINS = ("humidifier", "switch", "input_boolean")
+# Dehumidifiers/humidifiers: a run lasts at least 30 min and RoomMind's own off rests 15 min, so a
+# compressor dehumidifier starts at most every 45 min instead of cycling on the 5 % hysteresis
+HUMIDITY_DEVICE_MIN_RUN_MINUTES = 30
+HUMIDITY_DEVICE_MIN_OFF_MINUTES = 15
+# Ventilating for humidity: outdoor air this much drier (g/m³ absolute) to start, the smaller margin to go on
+HUMIDITY_VENT_START_MARGIN = 2.0
+HUMIDITY_VENT_KEEP_MARGIN = 1.0
+
+# Air conditioner in dry while a room is too humid and needs neither heating nor cooling (#440).
+# Dry cools too: it ends AC_DRY_STOP_MARGIN_K above the heat target (and never more than
+# AC_DRY_MAX_BELOW_COOL_K below the cool target, so a wide eco band is not cooled through) and
+# starts again from AC_DRY_START_MARGIN_K above it
+AC_DRY_STOP_MARGIN_K = 0.5
+AC_DRY_START_MARGIN_K = 1.0
+AC_DRY_MAX_BELOW_COOL_K = 3.0
+AC_DRY_MIN_RUN_MINUTES = 10
+# Pause after dry reached its stop point: the air warms back to the walls within minutes
+AC_DRY_MIN_OFF_MINUTES = 15
+# No dry this long after the room heated: it would take back what the heating just brought
+AC_DRY_AFTER_HEATING_MINUTES = 60
+# The model learns again this long after dry: the air warms back to the walls meanwhile
+AC_DRY_SETTLE_MINUTES = 30
+# A unit that does not show dry this long after the switch does not take it
+AC_DRY_REPORT_SECONDS = 300
+# The room's own dehumidifier must be unreadable this long before an AC dries in its place (Wi-Fi dropouts)
+AC_DRY_DEHUMIDIFIER_GONE_MINUTES = 10
+
+# Room fan (#266): a ceiling or standing fan that runs while RoomMind heats and/or cools the room
+ROOM_FAN_HEAT = "heat"
+ROOM_FAN_COOL = "cool"
+ROOM_FAN_BOTH = "both"
+ROOM_FAN_MODES = (ROOM_FAN_HEAT, ROOM_FAN_COOL, ROOM_FAN_BOTH)
+DEFAULT_ROOM_FAN_MODE = ROOM_FAN_BOTH
+# No compressor behind it, only noise and relay wear: shorter than the humidity devices
+ROOM_FAN_MIN_RUN_MINUTES = 10
+ROOM_FAN_MIN_OFF_MINUTES = 5
+# After a run the fan goes on this long (the radiator profile's decay time): it bridges the short
+# pauses between AC runs and spreads the heat a radiator still gives off. Not after underfloor
+# heating (the fan ran through the long run). In radiator rooms up to the cap while the learned
+# afterglow lasts; past it the little heat left is not worth a draught in winter
+ROOM_FAN_POST_RUN_MINUTES = 10
+ROOM_FAN_POST_HEAT_MAX_MINUTES = 30
+
 # Context identifier for RoomMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "roommind"
 ROOMMIND_CONTEXT_ID = "roommind"
@@ -123,6 +188,12 @@ PROPORTIONAL_SETPOINT_REPORT_SECONDS = (
 PROPORTIONAL_SETPOINT_REPORT_TOLERANCE = (
     0.5  # K a shown setpoint may differ from the sent one (device rounding) before it counts as dropped
 )
+# A device RoomMind switched off that shows "off" but still reports a run lost the command
+# (Zigbee TRV heating for hours behind an optimistic "off"); sent again only to devices seen to drop a run's
+# hvac_action after an off, so integrations whose hvac_action ignores the mode get nothing extra
+OFF_CONFIRM_SECONDS = 300  # Time a device may keep reporting the run after the off before it is sent again
+OFF_RESEND_INTERVAL_SECONDS = 600  # Minimum time between two sends of the same lost off
+OFF_RESEND_MAX = 3  # Sends per off before RoomMind gives up and leaves a warning
 BOOST_CAP_FALLBACK_STEP = 0.5  # Distance kept below a device's max_temp for proportional heating setpoints when it reports no target_temp_step (#396)
 # Direct valve control (#413): TRVs whose valve opening RoomMind sets through number entities
 VALVE_DWELL_SECONDS = 600  # Minimum time a valve position stays before a small correction moves the motor again
@@ -291,6 +362,20 @@ COVER_REOPEN_HOLD_SECONDS: int = 3600  # min time since the last move before a p
 COVER_REOPEN_SNAP_PCT: int = 5  # a reopening ending this close to open (or the baseline) goes all the way
 COVER_DAILY_LOOKAHEAD_H: float = 8.0  # hours ahead to search for daily solar peak (Tier 2)
 COVER_SMOOTHING_MINUTES: float = 30.0  # EMA time constant for room temp and shading excess (AC cycles)
+
+# Per-room sun sensor (#303), see managers/solar_sensor_manager.py
+SOLAR_SENSOR_LEARN_MIN_Q: float = 0.1  # the model must expect at least this much sun (GHI/1000) to learn the ratio
+SOLAR_SENSOR_USE_MIN_Q: float = 0.02  # below it (dawn, dusk) a reading is lamp light as much as sun
+SOLAR_SENSOR_CALIBRATION_SUN_H: float = 0.3  # model sun (h at 1000 W/m²) to fix the scale: a clear winter day
+SOLAR_SENSOR_OPEN_SHADING: float = 0.9  # shading factor from which the covers count as open (~88 % position)
+SOLAR_SENSOR_SHADED: float = 0.75  # shading factor up to which a sample tells where the sensor sits
+SOLAR_SENSOR_POSITION_MIN_SUN_H: float = 1.0  # shaded model sun before the sensor position is decided
+SOLAR_SENSOR_STALE_S: float = 3600.0  # no report for this long in daylight: the sensor hangs
+SOLAR_SENSOR_PROFILE_BINS: int = 24  # profile per 15° of sun azimuth
+SOLAR_SENSOR_PROFILE_TAU_H: float = 3.0  # sample hours a profile bin averages over
+SOLAR_SENSOR_RATIO_MAX: float = 4.0  # measured/model ratio clamp (a facade gets more than GHI at low sun)
+SOLAR_SENSOR_DEVIATION_TAU_MIN: float = 20.0  # smoothing of the current deviation from the profile
+SOLAR_SENSOR_DEVIATION_FADE_H: float = 2.0  # forecasts fade the current deviation back to the profile
 COVER_SMOOTHING_RISE_MINUTES: float = 10.0  # faster EMA while the shading excess climbs
 
 # Heat source orchestration — smart routing for rooms with multiple heating device types
@@ -304,6 +389,9 @@ HEAT_SOURCE_SECONDARY_POWER_SCALE = 0.7  # throttle secondary when both active (
 # Compressor group defaults
 DEFAULT_COMPRESSOR_MIN_RUN_MINUTES = 15
 DEFAULT_COMPRESSOR_MIN_OFF_MINUTES = 5
+# "All in the same mode" (#533): a switch waits for the units still in the other mode to go off,
+# at most this long (a unit still in its min run longer): a unit RoomMind may not touch must not block it for good.
+UNIFORM_SWITCH_MAX_WAIT_S = 300
 # Devices without usable state (IR blasters) get an unchanged command once more after this long.
 # Long enough that it is not audible as a beep pattern (#416), short enough to heal a lost frame,
 # a change on the remote or a restarted device within one comfortable stretch.
@@ -340,6 +428,28 @@ CONFLICT_RESOLUTIONS = [
     CONFLICT_RESOLUTION_OUTDOOR_TEMP,
 ]
 DEFAULT_CONFLICT_RESOLUTION = CONFLICT_RESOLUTION_HEATING_PRIORITY
+# Master device of a group: a climate entity gets a mode (and optional setpoints), a switch is turned on/off
+MASTER_ENTITY_DOMAINS = ("climate", "switch", "input_boolean")
+# How a climate master is switched off: hvac_mode off, or only its off temperature in its heat mode
+MASTER_OFF_MODE_OFF = "off"
+MASTER_OFF_MODE_TEMPERATURE = "temperature"
+MASTER_OFF_MODES = [MASTER_OFF_MODE_OFF, MASTER_OFF_MODE_TEMPERATURE]
+# Start delay and run-on of a master device, in seconds
+MAX_MASTER_DELAY_S = 3600
+# Setpoints sent to a climate master (its own unit, e.g. a boiler's flow temperature)
+MIN_MASTER_TEMPERATURE = 5.0
+MAX_MASTER_TEMPERATURE = 90.0
+# Setpoints closer than this count as already set
+MASTER_TEMPERATURE_TOLERANCE = 0.05
+# Master options at these values are not stored: groups without them stay readable for older releases
+MASTER_OPTION_DEFAULTS: dict[str, object] = {
+    "min_rooms": 1,
+    "start_delay_seconds": 0,
+    "run_on_seconds": 0,
+    "on_temperature": None,
+    "off_temperature": None,
+    "off_mode": MASTER_OFF_MODE_OFF,
+}
 
 
 # Far-future sentinel: vacation active indefinitely (year 2999)
@@ -354,13 +464,31 @@ def is_override_active(room: dict) -> bool:
     return override_until is None or time.time() < override_until
 
 
+PRESENCE_OVERRIDE_KEEP = "keep"
+PRESENCE_OVERRIDE_PAUSE = "pause"
+PRESENCE_OVERRIDE_END = "end"
+
+
+def presence_override_mode(settings: dict) -> str:
+    """What an override does when everyone leaves: keep (default), pause or end.
+
+    ``presence_clears_override`` (pause) stays as it was stored before, ``presence_ends_override``
+    only adds "end" and wins when both are set.
+    """
+    if settings.get("presence_ends_override", False):
+        return PRESENCE_OVERRIDE_END
+    if settings.get("presence_clears_override", False):
+        return PRESENCE_OVERRIDE_PAUSE
+    return PRESENCE_OVERRIDE_KEEP
+
+
 def is_override_suppressed(room: dict, settings: dict, presence_away: bool) -> bool:
     """Return True when an active override should be ignored due to presence."""
     if not presence_away:
         return False
     if room.get("ignore_presence", False):
         return False
-    return bool(settings.get("presence_clears_override", False))
+    return presence_override_mode(settings) == PRESENCE_OVERRIDE_PAUSE
 
 
 def build_override_live(room: dict, suppressed: bool = False) -> dict:

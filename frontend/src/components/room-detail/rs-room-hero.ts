@@ -1,6 +1,12 @@
 import { LitElement, html, css, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, HassArea, RoomConfig, RoomLiveData } from "../../types";
+import type {
+  HomeAssistant,
+  HassArea,
+  PresenceAwayAction,
+  RoomConfig,
+  RoomLiveData,
+} from "../../types";
 import {
   hintText,
   isRoomControlled,
@@ -52,6 +58,7 @@ export class RsRoomHero extends LitElement {
   @property({ attribute: false }) public outdoorTemp: number | null = null;
   @property({ type: Boolean }) public vacationActive = false;
   @property({ attribute: false }) public vacationUntil: number | null = null;
+  @property({ type: String }) public presenceAwayAction: PresenceAwayAction = "eco";
 
   @state() private _editingName = false;
   @state() private _nameInput = "";
@@ -657,14 +664,21 @@ export class RsRoomHero extends LitElement {
         info:
           h.id === "compressor"
             ? localize("hero.compressor_protection_info", l)
-            : h.id === "setback"
-              ? localize("hero.setback_info", l)
-              : h.id === "learning_paused" && live.learning_paused_reason === "outdoor_unavailable"
-                ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
-                : undefined,
+            : h.id === "uniform_mode"
+              ? localize("hero.uniform_mode_info", l)
+              : h.id === "setback"
+                ? localize("hero.setback_info", l)
+                : h.id === "learning_paused" &&
+                    live.learning_paused_reason === "outdoor_unavailable"
+                  ? localize("hero.mpc_learning_paused.outdoor_unavailable", l)
+                  : undefined,
       }));
     // Compressor protection without a known end has no card hint; the hero names it anyway.
-    if (live.compressor_protection_active && live.compressor_protection_until == null) {
+    if (
+      live.compressor_protection_active &&
+      live.compressor_protection_until == null &&
+      live.compressor_protection_reason !== "uniform_mode"
+    ) {
       chips.push({
         icon: "mdi:timer-sand",
         text: localize(
@@ -754,6 +768,7 @@ export class RsRoomHero extends LitElement {
           states: this.hass.states,
           vacationActive: this.vacationActive,
           vacationUntil: this.vacationUntil,
+          presenceAwayAction: this.presenceAwayAction,
         });
     const adjustments: string[] = [];
     const price = inactive ? null : priceShiftInfo(this.config);

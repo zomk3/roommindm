@@ -23,14 +23,31 @@ from .const import (
     DEFAULT_CONFLICT_RESOLUTION,
     DEFAULT_CONTROL_MODE,
     DOMAIN,
+    HUMIDITY_DEVICE_DOMAINS,
+    HUMIDITY_LIMIT_GAP,
+    MASTER_ENTITY_DOMAINS,
+    MASTER_OFF_MODE_OFF,
+    MASTER_OFF_MODES,
+    MASTER_OPTION_DEFAULTS,
     MAX_CO2_THRESHOLD,
+    MAX_HUMIDITY_MAX,
+    MAX_HUMIDITY_MIN,
+    MAX_MASTER_DELAY_S,
+    MAX_MASTER_TEMPERATURE,
+    MAX_OVERRIDE_DURATION_MINUTES,
     MAX_PRICE_SHIFT_K,
     MAX_TARGET_TEMP,
     MIN_CO2_THRESHOLD,
+    MIN_HUMIDITY_MAX,
+    MIN_HUMIDITY_MIN,
+    MIN_MASTER_TEMPERATURE,
     MIN_OCCUPANCY_ECO_DELAY_MINUTES,
+    MIN_OVERRIDE_DURATION_MINUTES,
     MIN_TARGET_TEMP,
     OVERRIDE_CUSTOM,
+    OVERRIDE_DURATION_MODES,
     OVERRIDE_TYPES,
+    ROOM_FAN_MODES,
     VENTILATION_DOMAINS,
     build_override_live,
     is_override_suppressed,
@@ -44,7 +61,7 @@ from .services.analytics_service import (
     build_analytics_data,
 )
 from .store import get_store
-from .utils.area_utils import REST_SWITCHED_OFF, rooms_without_area
+from .utils.area_utils import REST_SWITCHED_OFF, ha_floor_order, rooms_without_area
 from .utils.device_utils import (
     COIL_DRY_INHERIT,
     COIL_DRY_MODE_FAN_ONLY,
@@ -191,6 +208,8 @@ _ROOM_SAVE_FIELDS = (
     "comfort_cool",
     "eco_heat",
     "eco_cool",
+    "away_heat",
+    "away_cool",
     "presence_persons",
     "display_name",
     "heating_system_type",
@@ -224,6 +243,18 @@ _ROOM_SAVE_FIELDS = (
     "voc_sensor",
     "voc_threshold",
     "ventilation_entity",
+    "humidity_max",
+    "humidity_min",
+    "dehumidifier_entity",
+    "humidifier_entity",
+    "solar_sensor",
+    "room_fan_entity",
+    "room_fan_mode",
+    "ac_dry_enabled",
+    "override_duration_mode",
+    "override_duration_minutes",
+    "mold_enabled",
+    "mold_prevention_intensity",
 )
 
 # Same limits as the room climate entity; also turns away nan/inf
@@ -265,6 +296,7 @@ _SETTINGS_SAVE_FIELDS = (
     "presence_persons",
     "presence_away_action",
     "presence_clears_override",
+    "presence_ends_override",
     "schedule_off_action",
     "ac_tariff_enabled",
     "ac_off_peak_start",
@@ -303,6 +335,7 @@ _SETTINGS_SAVE_FIELDS = (
     "mold_prevention_notify_targets",
     "room_order",
     "group_by_floor",
+    "floor_order",
     "compressor_groups",
 )
 
@@ -341,11 +374,57 @@ def _validate_no_own_entities(config: dict, own_prefix: str) -> RoomMindValidati
         "co2_sensor",
         "voc_sensor",
         "ventilation_entity",
-        "dehumidifier_entity",
+        *_HUMIDITY_DEVICE_FIELDS,
+        "solar_sensor",
+        "room_fan_entity",
     ):
         eid = config.get(field, "")
         if eid and eid.split(".", 1)[-1].startswith(own_prefix):
             return _own_entity_error(eid)
+    return None
+
+
+# Room field -> the humidifier device class that runs the other way and does not fit there
+_HUMIDITY_DEVICE_FIELDS = {"dehumidifier_entity": "humidifier", "humidifier_entity": "dehumidifier"}
+
+
+def _validate_humidity_control(
+    hass: HomeAssistant, area_id: str, room: dict, changed: dict, rooms: dict[str, dict]
+) -> tuple[str, str] | None:
+    """Check the merged room: limits apart by the gap, one role per entity, the right direction (#518).
+
+    Returns ``(error code, message)`` or None. Checked after the merge, because the auto-save sends
+    one field at a time. An entity keeps one role across all rooms: the ventilation, the
+    humidity devices and the room fans (#266) run on separate controllers, which must not fight
+    over one switch. The
+    device class is only checked for a field sent now, so a device that reports its class
+    later never blocks other saves of the room.
+    """
+    low, high = room.get("humidity_min"), room.get("humidity_max")
+    if low is not None and high is not None and high - low < HUMIDITY_LIMIT_GAP:
+        return (
+            websocket_api.ERR_INVALID_FORMAT,
+            f"The upper humidity limit must be at least {HUMIDITY_LIMIT_GAP} % above the lower one",
+        )
+    role_fields = ("ventilation_entity", *_HUMIDITY_DEVICE_FIELDS, "room_fan_entity")
+    roles = [room.get(f) for f in role_fields if room.get(f)]
+    if len(roles) != len(set(roles)):
+        return (
+            "invalid_entity",
+            "An entity can only be the ventilation, the dehumidifier, the humidifier or the room fan",
+        )
+    for other_id, other in rooms.items():
+        if other_id == area_id:
+            continue
+        for field in role_fields:
+            eid = room.get(field)
+            if eid and any(other.get(f) == eid for f in role_fields if f != field):
+                return "invalid_entity", f"'{eid}' has another role in another room"
+    for field, wrong_class in _HUMIDITY_DEVICE_FIELDS.items():
+        eid = changed.get(field) or ""
+        state = hass.states.get(eid) if eid.startswith("humidifier.") else None
+        if state is not None and state.attributes.get("device_class") == wrong_class:
+            return "invalid_entity", f"'{eid}' is a {wrong_class}"
     return None
 
 
@@ -430,6 +509,15 @@ async def websocket_list_rooms(
             "air_quality_bad": live.get("air_quality_bad", False),
             "air_quality_reason": live.get("air_quality_reason"),
             "ventilation_active": live.get("ventilation_active", False),
+            "room_fan_active": live.get("room_fan_active", False),
+            "humidity_high": live.get("humidity_high", False),
+            "humidity_low": live.get("humidity_low", False),
+            "humidity_ventilate": live.get("humidity_ventilate", False),
+            "humidity_vent_blocked": live.get("humidity_vent_blocked", False),
+            "ac_dry_active": live.get("ac_dry_active", False),
+            "humidifier_active": live.get("humidifier_active", False),
+            # Sun sensor (#303): kind (irradiance/illuminance/percent) and learning/active/unavailable/unsupported
+            "solar_sensor": live.get("solar_sensor"),
             "mold_risk_level": live.get("mold_risk_level", "ok"),
             "mold_surface_rh": live.get("mold_surface_rh"),
             "mold_surface_temp": live.get("mold_surface_temp"),
@@ -462,6 +550,7 @@ async def websocket_list_rooms(
             "shared_ac_waiting_reason": live.get("shared_ac_waiting_reason"),
             "compressor_protection_active": live.get("compressor_protection_active", False),
             "compressor_protection_reason": live.get("compressor_protection_reason"),
+            "uniform_group_mode": live.get("uniform_group_mode"),
             "compressor_protection_until": live.get("compressor_protection_until"),
             "coil_dry_active": live.get("coil_dry_active", False),
             "coil_dry_phase": live.get("coil_dry_phase"),
@@ -502,6 +591,8 @@ async def websocket_list_rooms(
             "hidden_rooms": settings.get("hidden_rooms", []),
             "room_order": settings.get("room_order", []),
             "group_by_floor": settings.get("group_by_floor", False),
+            "floor_order": settings.get("floor_order", []),
+            "ha_floor_order": ha_floor_order(hass),
             "control_mode": settings.get("control_mode", DEFAULT_CONTROL_MODE),
             "climate_control_active": settings.get("climate_control_active", True),
             "presence_enabled": settings.get("presence_enabled", False),
@@ -510,6 +601,7 @@ async def websocket_list_rooms(
             "presence_persons": settings.get("presence_persons", []),
             "presence_away_action": settings.get("presence_away_action", "eco"),
             "presence_clears_override": settings.get("presence_clears_override", False),
+            "presence_ends_override": settings.get("presence_ends_override", False),
             "schedule_off_action": settings.get("schedule_off_action", "eco"),
             "anyone_home": _compute_anyone_home(hass, settings),
             "valve_protection_enabled": settings.get("valve_protection_enabled", False),
@@ -522,6 +614,9 @@ async def websocket_list_rooms(
             ),
             "coil_dry_drain_minutes": settings.get("coil_dry_drain_minutes", DEFAULT_COIL_DRY_DRAIN_MINUTES),
             "compressor_groups": settings.get("compressor_groups", []),
+            "mold_detection_enabled": settings.get("mold_detection_enabled", False),
+            "mold_prevention_enabled": settings.get("mold_prevention_enabled", False),
+            "mold_prevention_intensity": settings.get("mold_prevention_intensity", "medium"),
         },
     )
 
@@ -566,7 +661,6 @@ async def websocket_list_rooms(
         ],
         vol.Optional("temperature_sensor"): str,
         vol.Optional("humidity_sensor"): str,
-        vol.Optional("dehumidifier_entity"): vol.Any("", vol.Match(r"^(switch|humidifier)\.[a-z0-9_]+$")),
         vol.Optional("dehumidifier_enabled"): bool,
         vol.Optional("dehumidifier_lower_bound"): vol.All(vol.Coerce(float), vol.Range(min=1, max=99)),
         vol.Optional("dehumidifier_upper_bound"): vol.All(vol.Coerce(float), vol.Range(min=2, max=100)),
@@ -602,6 +696,9 @@ async def websocket_list_rooms(
         vol.Optional("comfort_cool"): _TARGET_TEMP,
         vol.Optional("eco_heat"): _TARGET_TEMP,
         vol.Optional("eco_cool"): _TARGET_TEMP,
+        # Nobody home with presence_away_action "away"; None (or unset) = eco
+        vol.Optional("away_heat"): vol.Any(None, _TARGET_TEMP),
+        vol.Optional("away_cool"): vol.Any(None, _TARGET_TEMP),
         vol.Optional("presence_persons"): [str],
         vol.Optional("display_name"): str,
         vol.Optional("heating_system_type"): vol.In(["", "radiator", "underfloor"]),
@@ -640,11 +737,35 @@ async def websocket_list_rooms(
             vol.Coerce(int), vol.Range(min=MIN_CO2_THRESHOLD, max=MAX_CO2_THRESHOLD)
         ),
         vol.Optional("voc_sensor"): str,
+        vol.Optional("solar_sensor"): str,
         # In the sensor's own unit (index, ppb, µg/m³); None = the reading is shown, not judged
         vol.Optional("voc_threshold"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.001, max=1e6))),
         vol.Optional("ventilation_entity"): vol.Any(
             "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
         ),
+        vol.Optional("humidity_max"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=MIN_HUMIDITY_MAX, max=MAX_HUMIDITY_MAX))
+        ),
+        vol.Optional("humidity_min"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=MIN_HUMIDITY_MIN, max=MAX_HUMIDITY_MIN))
+        ),
+        vol.Optional("dehumidifier_entity"): vol.Any(
+            "", vol.All(str, vol.Match(rf"^({'|'.join(HUMIDITY_DEVICE_DOMAINS)})\.[a-z0-9_]+$"))
+        ),
+        vol.Optional("humidifier_entity"): vol.Any(
+            "", vol.All(str, vol.Match(rf"^({'|'.join(HUMIDITY_DEVICE_DOMAINS)})\.[a-z0-9_]+$"))
+        ),
+        vol.Optional("room_fan_entity"): vol.Any(
+            "", vol.All(str, vol.Match(rf"^({'|'.join(VENTILATION_DOMAINS)})\.[a-z0-9_]+$"))
+        ),
+        vol.Optional("room_fan_mode"): vol.In(ROOM_FAN_MODES),
+        vol.Optional("ac_dry_enabled"): bool,
+        vol.Optional("override_duration_mode"): vol.In(OVERRIDE_DURATION_MODES),
+        vol.Optional("override_duration_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_OVERRIDE_DURATION_MINUTES, max=MAX_OVERRIDE_DURATION_MINUTES)
+        ),
+        vol.Optional("mold_enabled"): bool,
+        vol.Optional("mold_prevention_intensity"): vol.In(["", "light", "medium", "strong"]),
     }
 )
 @websocket_api.async_response
@@ -722,6 +843,12 @@ async def websocket_save_room(
         _send_error(
             connection, msg["id"], "invalid_schedule", "schedule_missing", "This reusable schedule no longer exists."
         )
+        return
+    humidity_err = _validate_humidity_control(
+        hass, area_id, {**(store.get_room(area_id) or {}), **config}, config, store.get_rooms()
+    )
+    if humidity_err:
+        connection.send_error(msg["id"], *humidity_err)
         return
 
     if ("thermostats" in config or "acs" in config) and "devices" not in config:
@@ -1063,7 +1190,7 @@ async def websocket_get_settings(
         vol.Optional("vacation_until"): vol.Any(vol.Coerce(float), None),
         vol.Optional("presence_enabled"): bool,
         vol.Optional("presence_persons"): [str],
-        vol.Optional("presence_away_action"): vol.In(["eco", "off"]),
+        vol.Optional("presence_away_action"): vol.In(["eco", "off", "away"]),
         vol.Optional("presence_clears_override"): bool,
         vol.Optional("ac_tariff_enabled"): bool,
         vol.Optional("ac_off_peak_start"): vol.Match(r"^(?:[01]\d|2[0-3]):[0-5]\d$"),
@@ -1073,6 +1200,7 @@ async def websocket_get_settings(
         vol.Optional("ac_morning_boost_stop_margin"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
         vol.Optional("ac_morning_boost_offset"): vol.All(vol.Coerce(float), vol.Range(min=0, max=5)),
         vol.Optional("ac_morning_boost_rooms"): [str],
+        vol.Optional("presence_ends_override"): bool,
         vol.Optional("schedule_off_action"): vol.In(["eco", "off"]),
         vol.Optional("valve_protection_enabled"): bool,
         vol.Optional("valve_protection_interval_days"): vol.All(vol.Coerce(int), vol.Range(min=1, max=90)),
@@ -1115,6 +1243,7 @@ async def websocket_get_settings(
         ],
         vol.Optional("room_order"): [str],
         vol.Optional("group_by_floor"): bool,
+        vol.Optional("floor_order"): [str],
         vol.Optional("compressor_groups"): [
             {
                 vol.Required("id"): str,
@@ -1133,6 +1262,22 @@ async def websocket_get_settings(
                 vol.Optional("shared_ac_control", default=False): bool,
                 vol.Optional("night_cooling_members", default=[]): [str],
                 vol.Optional("heating_idle_mode", default="off"): vol.In(["off", "minimum_heat"]),
+                vol.Optional("min_rooms", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+                vol.Optional("start_delay_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_MASTER_DELAY_S)
+                ),
+                vol.Optional("run_on_seconds", default=0): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_MASTER_DELAY_S)
+                ),
+                vol.Optional("on_temperature", default=None): vol.Any(
+                    None,
+                    vol.All(vol.Coerce(float), vol.Range(min=MIN_MASTER_TEMPERATURE, max=MAX_MASTER_TEMPERATURE)),
+                ),
+                vol.Optional("off_temperature", default=None): vol.Any(
+                    None,
+                    vol.All(vol.Coerce(float), vol.Range(min=MIN_MASTER_TEMPERATURE, max=MAX_MASTER_TEMPERATURE)),
+                ),
+                vol.Optional("off_mode", default=MASTER_OFF_MODE_OFF): vol.In(MASTER_OFF_MODES),
             }
         ],
     }
@@ -1232,13 +1377,15 @@ async def websocket_save_settings(
         for g in groups:
             master = g.get("master_entity", "")
             if master:
-                if not master.startswith("climate."):
+                domain, _, object_id = master.partition(".")
+                # RoomMind's own entities (e.g. its climate control switch) would switch RoomMind itself
+                if domain not in MASTER_ENTITY_DOMAINS or object_id.startswith("roommind_"):
                     _send_error(
                         connection,
                         msg["id"],
                         "invalid_master_entity",
                         "master_not_climate",
-                        "Master entity '{entity_id}' must be a climate entity",
+                        "Master entity '{entity_id}' must be a climate, switch or input_boolean entity",
                         entity_id=master,
                     )
                     return
@@ -1283,6 +1430,10 @@ async def websocket_save_settings(
                 "A master entity cannot be assigned to multiple groups",
             )
             return
+        changes["compressor_groups"] = [
+            {k: v for k, v in g.items() if k not in MASTER_OPTION_DEFAULTS or v != MASTER_OPTION_DEFAULTS[k]}
+            for g in groups
+        ]
 
     settings = await store.async_save_settings(changes)
     connection.send_result(msg["id"], {"settings": settings})
